@@ -87,6 +87,10 @@ export async function createTestContext(): Promise<TestContext> {
     S3_SECRET_ACCESS_KEY: MINIO_PASSWORD,
     S3_FORCE_PATH_STYLE: 'true',
     CORS_ORIGIN: 'http://localhost:3000',
+    // Hash-based embeddings: no model download, no drift between runs, so a
+    // test can assert an exact result ordering rather than "something came back".
+    EMBEDDING_PROVIDER: 'deterministic',
+    EMBEDDING_DIM: '384',
   });
 
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();

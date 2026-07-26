@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
+    "@huggingface/transformers": "^4.2.0",
     "@invoiceiq/domain": "workspace:*",
     "zod": "^4.4.3"
   },

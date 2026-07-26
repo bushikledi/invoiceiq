@@ -16,6 +16,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1095.0",
     "@aws-sdk/s3-request-presigner": "^3.1095.0",
+    "@invoiceiq/ai": "workspace:*",
     "@invoiceiq/config": "workspace:*",
     "@invoiceiq/contracts": "workspace:*",
     "@invoiceiq/database": "workspace:*",

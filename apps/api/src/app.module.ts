@@ -11,6 +11,8 @@ import { HealthModule } from './modules/health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
 import { ReviewModule } from './modules/review/review.module.js';
+import { SearchModule } from './modules/search/search.module.js';
+import { ExportModule } from './modules/export/export.module.js';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { TraceMiddleware } from './common/trace/trace.middleware.js';
@@ -48,6 +50,8 @@ import { buildLoggerConfig } from './logging/logger.config.js';
     AuthModule,
     DocumentsModule,
     ReviewModule,
+    SearchModule,
+    ExportModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

@@ -1,6 +1,6 @@
-import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Inject, Logger } from '@nestjs/common';
-import type { Job } from 'bullmq';
+import type { Job, Queue } from 'bullmq';
 import {
   computeCostUsd,
   extractWithRepair,
@@ -24,7 +24,12 @@ import { WORKER_ENV } from '../config/config.module.js';
 import { LLM_EXTRACTOR } from '../ai/llm.module.js';
 import { PrismaService } from '../infrastructure/prisma/prisma.service.js';
 import { StorageService } from '../infrastructure/storage/storage.service.js';
-import { QUEUE_EXTRACTION, type ExtractDocumentJob } from '../queues.js';
+import {
+  JOB_EMBED_DOCUMENT,
+  QUEUE_EMBEDDING,
+  QUEUE_EXTRACTION,
+  type ExtractDocumentJob,
+} from '../queues.js';
 import { extractPdfText, truncateForPrompt } from './pdf-text.js';
 import { classifyError, TERMINAL_CODES } from './classify-error.js';
 
@@ -56,6 +61,7 @@ export class ExtractDocumentProcessor extends WorkerHost {
     private readonly storage: StorageService,
     @Inject(LLM_EXTRACTOR) private readonly llm: LlmExtractor,
     @Inject(WORKER_ENV) private readonly env: WorkerEnv,
+    @InjectQueue(QUEUE_EMBEDDING) private readonly embeddingQueue: Queue,
   ) {
     super();
   }
@@ -146,7 +152,7 @@ export class ExtractDocumentProcessor extends WorkerHost {
     const needsReview = hasBlockingFinding(findings) || confidence.requiresReview;
     const nextStatus = needsReview ? 'NEEDS_REVIEW' : 'COMPLETED';
 
-    await this.persist({
+    const extractionId = await this.persist({
       documentId,
       data,
       findings,
@@ -158,6 +164,23 @@ export class ExtractDocumentProcessor extends WorkerHost {
       nextStatus,
       jobId: job.id ?? documentId,
     });
+
+    // Enqueued after the transaction commits, never inside it: a job that fires
+    // on a transaction that then rolls back would try to embed an extraction
+    // that does not exist.
+    //
+    // Failure to enqueue must not fail the extraction — the document is
+    // correct, it is merely not searchable yet, and losing a good extraction
+    // over a Redis blip would be the wrong trade.
+    try {
+      await this.embeddingQueue.add(
+        JOB_EMBED_DOCUMENT,
+        { documentId, extractionId, traceId: job.data.traceId },
+        { jobId: extractionId },
+      );
+    } catch (error) {
+      this.logger.warn(`${documentId}: could not enqueue embedding: ${String(error)}`);
+    }
 
     return { status: nextStatus };
   }
@@ -180,10 +203,10 @@ export class ExtractDocumentProcessor extends WorkerHost {
     pageCount: number;
     nextStatus: 'COMPLETED' | 'NEEDS_REVIEW';
     jobId: string;
-  }): Promise<void> {
+  }): Promise<string> {
     const costUsd = computeCostUsd(input.usage, input.model);
 
-    await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       const current = await tx.document.findUniqueOrThrow({
         where: { id: input.documentId },
         select: { status: true },
@@ -239,6 +262,8 @@ export class ExtractDocumentProcessor extends WorkerHost {
           },
         },
       });
+
+      return extraction.id;
     });
   }
 

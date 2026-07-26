@@ -7,6 +7,8 @@ import { PrismaModule } from './infrastructure/prisma/prisma.module.js';
 import { StorageModule } from './infrastructure/storage/storage.module.js';
 import { LlmModule } from './ai/llm.module.js';
 import { ExtractDocumentProcessor } from './pipeline/extract-document.processor.js';
+import { EmbedDocumentProcessor } from './pipeline/embed-document.processor.js';
+import { EmbeddingModule } from './embedding/embedding.module.js';
 import { QUEUE_EMBEDDING, QUEUE_EXTRACTION } from './queues.js';
 import { HeartbeatService } from './health/heartbeat.service.js';
 
@@ -78,7 +80,8 @@ import { HeartbeatService } from './health/heartbeat.service.js';
     PrismaModule,
     StorageModule,
     LlmModule,
+    EmbeddingModule,
   ],
-  providers: [ExtractDocumentProcessor, HeartbeatService],
+  providers: [ExtractDocumentProcessor, EmbedDocumentProcessor, HeartbeatService],
 })
 export class WorkerAppModule {}

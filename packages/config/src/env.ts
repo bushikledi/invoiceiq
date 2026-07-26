@@ -35,6 +35,23 @@ export const BaseEnvSchema = z.object({
     .int()
     .positive()
     .default(10 * 1024 * 1024),
+
+  /**
+   * Embedding configuration lives in the SHARED base schema, not in the worker
+   * slice, because both processes need it and they must agree. The worker
+   * embeds documents; the API embeds the search query. If they use different
+   * models the query vector lands in a different space and every result is
+   * noise — with no error anywhere. Sharing the definition makes the agreement
+   * structural instead of a convention someone has to remember.
+   *
+   * `local` runs multilingual MiniLM in-process (no key, 384 dims, handles the
+   * Italian sample invoices). `deterministic` is the hash-based test embedder.
+   * EMBEDDING_DIM must match the pgvector column, which is asserted at boot.
+   */
+  EMBEDDING_PROVIDER: z.enum(['local', 'openai', 'deterministic']).default('local'),
+  EMBEDDING_MODEL: z.string().default('Xenova/paraphrase-multilingual-MiniLM-L12-v2'),
+  EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
+  OPENAI_API_KEY: z.string().optional(),
 });
 
 /** API-only configuration. */
@@ -71,16 +88,6 @@ export const WorkerEnvSchema = BaseEnvSchema.extend({
   LLM_MODEL_FALLBACK: z.string().default('claude-sonnet-5'),
   MAX_EXTRACTION_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
   MAX_PROMPT_TOKENS: z.coerce.number().int().positive().default(8000),
-
-  /**
-   * `local` runs multilingual MiniLM in-process (no key, 384 dims, handles the
-   * Italian sample invoices). `deterministic` is the hash-based test embedder.
-   * EMBEDDING_DIM must match the pgvector column — asserted at boot by the adapter.
-   */
-  EMBEDDING_PROVIDER: z.enum(['local', 'openai', 'deterministic']).default('local'),
-  EMBEDDING_MODEL: z.string().default('Xenova/paraphrase-multilingual-MiniLM-L12-v2'),
-  EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
-  OPENAI_API_KEY: z.string().optional(),
 
   CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
   EXTRACTION_CONCURRENCY: z.coerce.number().int().positive().default(2),

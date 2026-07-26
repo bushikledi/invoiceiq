@@ -18,6 +18,12 @@ export default defineConfig({
         // and IS covered. The wrapper itself is exercised by the nightly
         // contract job against the live API.
         'src/adapters/anthropic-extractor.ts',
+        // Same rationale as the extractor above: these two are thin wrappers
+        // around a network call and a 120 MB model download. Covering them
+        // means mocking the transport to assert that we called it. The
+        // deterministic embedder — the one with real logic in it — IS covered.
+        'src/adapters/local-embedder.ts',
+        'src/adapters/openai-embedder.ts',
       ],
       thresholds: { lines: 80, functions: 80, branches: 75, statements: 80 },
     },

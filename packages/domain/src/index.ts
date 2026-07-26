@@ -9,3 +9,4 @@ export * from './extraction/invoice-schema.js';
 export * from './extraction/business-rules.js';
 export * from './extraction/corroboration.js';
 export * from './extraction/confidence-policy.js';
+export * from './search/chunking.js';

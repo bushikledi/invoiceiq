@@ -10,6 +10,7 @@ import { StorageModule } from './infrastructure/storage/storage.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { DocumentsModule } from './modules/documents/documents.module.js';
+import { ReviewModule } from './modules/review/review.module.js';
 import { JwtAuthGuard } from './modules/auth/jwt-auth.guard.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { TraceMiddleware } from './common/trace/trace.middleware.js';
@@ -46,6 +47,7 @@ import { buildLoggerConfig } from './logging/logger.config.js';
     HealthModule,
     AuthModule,
     DocumentsModule,
+    ReviewModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },

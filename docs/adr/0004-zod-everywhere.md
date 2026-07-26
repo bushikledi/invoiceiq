@@ -18,7 +18,7 @@ rejects, burning a retry every time.
 ## Decision
 
 Zod 4 everywhere. One schema per concept, and the JSON Schema handed to the
-provider is *generated from it* via Zod 4's built-in `z.toJSONSchema()`, so
+provider is _generated from it_ via Zod 4's built-in `z.toJSONSchema()`, so
 generation and validation cannot disagree.
 
 - `packages/config` — environment, validated once at boot.

@@ -7,7 +7,7 @@
 Extracting an invoice takes 5–60 seconds: a PDF fetch, a text extraction, one
 to three LLM calls with corrective retries, then validation and persistence.
 Proxies and load balancers typically cut idle HTTP connections at 30–60
-seconds. A synchronous endpoint is therefore not slow — it is *unreliable*, and
+seconds. A synchronous endpoint is therefore not slow — it is _unreliable_, and
 unreliable in the worst way, because the work often succeeded server-side while
 the client saw a timeout.
 
@@ -27,9 +27,9 @@ same document twice is a no-op. Combined with a status guard in the processor
 happens twice".
 
 **Two layers of retry, deliberately not conflated.** BullMQ attempts handle
-*transient* failures — network, 429, provider 5xx — with exponential backoff.
-The corrective-schema loop lives *inside* a single attempt and handles
-*semantic* failure, feeding specific Zod issues back to the model. Retrying a
+_transient_ failures — network, 429, provider 5xx — with exponential backoff.
+The corrective-schema loop lives _inside_ a single attempt and handles
+_semantic_ failure, feeding specific Zod issues back to the model. Retrying a
 schema violation with backoff would just buy the same malformed JSON later.
 
 ## Consequences
@@ -58,6 +58,6 @@ janitor cron is the backstop for SIGKILL and OOM, not the primary mechanism.
   transactional enqueue in the same commit as the document row. Rejected
   because we want Redis anyway and BullMQ's rate limiting, repeatable jobs, and
   dead-letter ergonomics are more mature. Worth revisiting if Redis ever exists
-  *only* for the queue.
+  _only_ for the queue.
 - **SQS.** Vendor lock-in and no local-dev story worth the trouble at this size.
 - **Synchronous with a longer timeout.** Does not survive contact with a proxy.

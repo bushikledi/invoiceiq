@@ -6,5 +6,5 @@ export * from './adapters/error-classification.js';
 export * from './prompts/extract-invoice.js';
 export * from './schema.js';
 export * from './pricing.js';
-export { FIXTURES, CLEAN_INVOICE_TEXT } from './fixtures/index.js';
+export { FIXTURES, CLEAN_INVOICE_TEXT, resolveScenarioFromText } from './fixtures/index.js';
 export type { FixtureScenarioName } from './fixtures/index.js';

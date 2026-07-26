@@ -71,6 +71,10 @@ const CLEAN_INVOICE = {
 const SUM_MISMATCH = {
   ...CLEAN_INVOICE,
   invoiceNumber: 'INV-241',
+  // Must match the dates printed on sum-mismatch.pdf, or corroboration
+  // correctly flags them and the demo shows amber on fields that are fine.
+  issueDate: '2026-03-18',
+  dueDate: '2026-04-17',
   subtotalCents: 125_000,
   vatTotalCents: 27_500,
   totalCents: 152_500,
@@ -79,8 +83,27 @@ const SUM_MISMATCH = {
 const MISSING_VAT_NUMBER = {
   ...CLEAN_INVOICE,
   invoiceNumber: 'INV-255',
-  vendor: { name: 'Bright Supplies Ltd', vatNumber: null, address: '14 King Street, London' },
+  vendor: {
+    name: 'Bright Supplies Ltd',
+    vatNumber: null,
+    address: '14 King Street, London EC2V 8AU',
+  },
+  issueDate: '2026-04-02',
+  dueDate: null,
   currency: 'GBP',
+  // 2 x 145.00 = 290.00, VAT 20% = 58.00, total 348.00 -- as printed.
+  lineItems: [
+    {
+      description: 'Standing desk converter',
+      quantity: 2,
+      unitPriceCents: 14_500,
+      vatRatePercent: 20,
+      totalCents: 29_000,
+    },
+  ],
+  subtotalCents: 29_000,
+  vatTotalCents: 5_800,
+  totalCents: 34_800,
   fieldConfidence: { ...CLEAN_INVOICE.fieldConfidence, 'vendor.vatNumber': 0.2 },
 };
 
@@ -96,6 +119,13 @@ const HALLUCINATED_TOTAL = {
 const MULTI_RATE = {
   ...CLEAN_INVOICE,
   invoiceNumber: 'INV-270',
+  vendor: {
+    name: 'Studio Bianchi S.n.c.',
+    vatNumber: 'IT98765432109',
+    address: 'Corso Buenos Aires 44, 20124 Milano MI',
+  },
+  issueDate: '2026-04-20',
+  dueDate: '2026-05-20',
   lineItems: [
     {
       description: 'Consulenza tecnica',
@@ -197,3 +227,26 @@ Imponibile                                  1.240,00
 IVA 22%                                       272,80
 TOTALE                                    € 1.512,80
 `;
+
+/**
+ * Maps a document to the fixture that describes it, by invoice number.
+ *
+ * Used only in fixture mode. Each sample PDF prints its own invoice number, so
+ * matching on that makes a keyless run behave like a real one: upload the
+ * sum-mismatch sample and you get the sum-mismatch extraction, findings and
+ * amber flags — rather than one canned response for every document.
+ */
+const SCENARIO_BY_INVOICE_NUMBER: Record<string, FixtureScenarioName> = {
+  'INV-233': 'clean-invoice',
+  'INV-241': 'sum-mismatch',
+  'INV-255': 'missing-vat-number',
+  'INV-262': 'hallucinated-total',
+  'INV-270': 'multi-rate',
+};
+
+export function resolveScenarioFromText(text: string): FixtureScenarioName | undefined {
+  for (const [invoiceNumber, scenario] of Object.entries(SCENARIO_BY_INVOICE_NUMBER)) {
+    if (text.includes(invoiceNumber)) return scenario;
+  }
+  return undefined;
+}

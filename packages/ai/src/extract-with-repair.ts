@@ -80,6 +80,7 @@ export async function extractWithRepair(
     const request: ExtractionRequest = {
       text,
       schema,
+      attempt,
       ...(feedback === undefined ? {} : { feedback }),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     };

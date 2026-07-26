@@ -3,6 +3,7 @@ import {
   AnthropicLlmExtractor,
   FIXTURES,
   FixtureLlmExtractor,
+  resolveScenarioFromText,
   type LlmExtractor,
 } from '@invoiceiq/ai';
 import type { WorkerEnv } from '@invoiceiq/config';
@@ -46,7 +47,7 @@ export const LLM_EXTRACTOR = Symbol('LLM_EXTRACTOR');
           'Using recorded fixtures — no LLM calls will be made. ' +
             'Set ANTHROPIC_API_KEY and LLM_PROVIDER=anthropic to go live.',
         );
-        return new FixtureLlmExtractor(FIXTURES, 'clean-invoice');
+        return new FixtureLlmExtractor(FIXTURES, 'clean-invoice', resolveScenarioFromText);
       },
     },
   ],

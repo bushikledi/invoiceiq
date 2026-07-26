@@ -16,10 +16,20 @@
   --color-status-failed: oklch(0.62 0.2 25);
 }
 
+/*
+ * Light only, deliberately.
+ *
+ * An earlier version declared `color-scheme: light dark` and a dark body, but
+ * every surface in the app — cards, tables, the review panes — is built on
+ * light tokens. The result on a dark-mode machine was black behind white
+ * cards: not a dark theme, just a broken light one. Committing to one scheme
+ * is honest; a real dark theme means restyling every component, which is worth
+ * doing deliberately or not at all.
+ */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
 }
 
 body {
-  @apply bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+  @apply bg-slate-50 text-slate-900 antialiased;
 }

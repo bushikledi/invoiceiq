@@ -53,6 +53,11 @@ export class UnreadablePdfError extends Error {
  * would otherwise be sent to the model, which would dutifully hallucinate an
  * entire invoice from nothing and charge us for the privilege. Catching it here
  * costs one PDF parse and zero tokens.
+ *
+ * Concurrent calls are safe: `getDocumentProxy` builds a fresh document per
+ * call, and extracting four PDFs through Promise.all returns each one's own
+ * text. Verified directly, because a shared pdf.js worker was a plausible
+ * suspect while chasing a cross-document bug that turned out to be unrelated.
  */
 export async function extractPdfText(bytes: Uint8Array): Promise<PdfText> {
   let pages: string[];

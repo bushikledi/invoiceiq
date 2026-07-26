@@ -300,3 +300,66 @@ describe('LlmError', () => {
     expect(error.retriable).toBe(true);
   });
 });
+
+describe('the fixture extractor across multiple documents', () => {
+  /**
+   * Regression. The worker holds ONE extractor for its whole lifetime, while
+   * the response index is per-extraction state. An earlier version reset only
+   * when `index === 0`, so document one resolved its scenario correctly and
+   * every document after it replayed the first one's fixture — producing
+   * confident, plausible, completely wrong extractions with nothing failing.
+   */
+  it('re-resolves the scenario for each new document', async () => {
+    const extractor = new FixtureLlmExtractor(FIXTURES, 'clean-invoice', (text) =>
+      text.includes('MULTI') ? 'multi-rate' : 'clean-invoice',
+    );
+
+    const first = await extractWithRepair(extractor, 'a clean one', SCHEMA);
+    const second = await extractWithRepair(extractor, 'a MULTI rate one', SCHEMA);
+    const third = await extractWithRepair(extractor, 'a clean one again', SCHEMA);
+
+    if (!isOk(first) || !isOk(second) || !isOk(third)) throw new Error('expected success');
+
+    expect(first.value.data.invoiceNumber).toBe('INV-233');
+    expect(second.value.data.invoiceNumber).toBe('INV-270');
+    // The third must go back to the clean fixture, not stay on multi-rate.
+    expect(third.value.data.invoiceNumber).toBe('INV-233');
+  });
+
+  it('resolves once per extraction, not once per attempt', async () => {
+    // A corrective retry carries feedback and must stay on the scenario it
+    // started with — re-resolving mid-repair would judge the repair against a
+    // different document.
+    const extractor = new FixtureLlmExtractor(FIXTURES, 'malformed-then-valid');
+    const result = await extractWithRepair(extractor, 'anything', SCHEMA);
+
+    if (!isOk(result)) throw new Error('expected success');
+    expect(result.value.attempts).toBe(2);
+
+    // The position within a multi-response scenario comes from the request, not
+    // from instance state — which is what makes a shared extractor safe when
+    // two documents are processed concurrently.
+    expect(extractor.calls.map((c) => c.attempt)).toEqual([1, 2]);
+  });
+
+  it('serves interleaved documents correctly, as concurrency 2 produces', async () => {
+    // The regression this guards: with per-instance scenario state, two
+    // documents in flight at once each read the other's fixture, producing
+    // extractions that parsed and scored fine but belonged to a different
+    // invoice. Nothing threw.
+    const extractor = new FixtureLlmExtractor(FIXTURES, 'clean-invoice', (text) =>
+      text.includes('MULTI') ? 'multi-rate' : 'clean-invoice',
+    );
+
+    const [a, b, c] = await Promise.all([
+      extractWithRepair(extractor, 'plain one', SCHEMA),
+      extractWithRepair(extractor, 'a MULTI rate one', SCHEMA),
+      extractWithRepair(extractor, 'another plain one', SCHEMA),
+    ]);
+
+    if (!isOk(a) || !isOk(b) || !isOk(c)) throw new Error('expected success');
+    expect(a.value.data.invoiceNumber).toBe('INV-233');
+    expect(b.value.data.invoiceNumber).toBe('INV-270');
+    expect(c.value.data.invoiceNumber).toBe('INV-233');
+  });
+});

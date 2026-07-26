@@ -4,13 +4,14 @@
   "private": true,
   "description": "Next.js App Router frontend: documents list, review detail, search.",
   "scripts": {
-    "dev": "next dev --port ${WEB_PORT:-3000}",
+    "dev": "dotenv -e ../../.env -- next dev --port ${WEB_PORT:-3000}",
     "build": "next build",
     "start": "next start --port ${WEB_PORT:-3000}",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test:unit": "vitest run --passWithNoTests",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "start:local": "dotenv -e ../../.env -- next start --port ${WEB_PORT:-3000}"
   },
   "dependencies": {
     "@invoiceiq/contracts": "workspace:*",
@@ -26,6 +27,7 @@
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "dotenv-cli": "^8.0.0",
     "eslint": "^9.18.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.7.3",

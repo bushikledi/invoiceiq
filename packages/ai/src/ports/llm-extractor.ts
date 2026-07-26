@@ -28,6 +28,14 @@ export interface ExtractionRequest {
    * issues, not "try again". Absent on the first attempt.
    */
   readonly feedback?: string;
+  /**
+   * 1-based attempt number within a single extraction.
+   *
+   * Carried on the request so adapters need no per-extraction state of their
+   * own. That is what makes a shared adapter instance safe under concurrency —
+   * and it is the signal the M11 model-tiering wrapper needs to escalate.
+   */
+  readonly attempt: number;
   /** Lets a long call be abandoned when the worker is draining. */
   readonly signal?: AbortSignal;
 }

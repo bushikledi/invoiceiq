@@ -20,8 +20,6 @@ playwright-report/
 test-results/
 blob-report/
 
-# Generated Prisma client
-packages/database/generated/
 
 # Locally cached embedding models (see M9)
 .models/

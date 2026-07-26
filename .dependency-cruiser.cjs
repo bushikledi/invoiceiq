@@ -75,10 +75,14 @@ module.exports = {
     },
     {
       name: 'no-dev-deps-in-src',
-      comment: 'Production source must not import a devDependency — it will be absent at runtime.',
+      comment:
+        'Production source must not import a devDependency — it will be absent at runtime. ' +
+        'Type-only imports are exempt: `import type { Request } from "express"` is erased at ' +
+        'compile time, so @types/* packages are correctly devDependencies and importing them ' +
+        'from src is safe.',
       severity: 'error',
       from: { path: '^(apps|packages)/[^/]+/src', pathNot: '\\.(test|spec)\\.ts$' },
-      to: { dependencyTypes: ['npm-dev'] },
+      to: { dependencyTypes: ['npm-dev'], dependencyTypesNot: ['type-only'] },
     },
     {
       name: 'no-unresolvable',

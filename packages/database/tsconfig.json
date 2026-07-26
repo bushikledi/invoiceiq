@@ -4,6 +4,5 @@
     "noEmit": true,
     "composite": false
   },
-  "include": ["src/**/*.ts", "prisma/**/*.ts"],
-  "exclude": ["generated/**"]
+  "include": ["src/**/*.ts", "prisma/**/*.ts"]
 }

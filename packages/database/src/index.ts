@@ -18,7 +18,7 @@ export {
   DocumentStatus,
   FindingSeverity,
   ReviewAction,
-} from '../generated/client/index.js';
+} from '@prisma/client';
 
 export type {
   User,
@@ -29,4 +29,4 @@ export type {
   ValidationFinding,
   ReviewDecision,
   DocumentChunk,
-} from '../generated/client/index.js';
+} from '@prisma/client';

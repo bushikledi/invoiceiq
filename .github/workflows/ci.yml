@@ -1,0 +1,233 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run on the same ref, except on main
+  # where every commit's result is worth keeping.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  # Silences pnpm's interactive prompts. Without it, a `--prod` install waits
+  # forever on a confirmation nobody can answer.
+  CI: true
+  TURBO_TELEMETRY_DISABLED: 1
+  DO_NOT_TRACK: 1
+
+jobs:
+  quality:
+    name: Lint, types, architecture
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Not just `pnpm boundaries`: this also injects a known-bad import and
+      # asserts the rules reject it. A boundary config that only ever passes
+      # proves nothing.
+      - name: Architecture boundaries (and prove they can fail)
+        run: pnpm boundaries:verify
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:unit
+
+  integration:
+    name: Integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Testcontainers starts its own Postgres/Redis/MinIO, so no `services:`
+    # block here — the suite owns its lifecycle and the same command works
+    # identically on a laptop.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @invoiceiq/database db:generate
+      - run: pnpm test:integration
+
+  build:
+    name: Build images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build api image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile
+          target: api
+          push: false
+          load: true
+          tags: invoiceiq-api:${{ github.sha }}
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build worker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile
+          target: worker
+          push: false
+          load: true
+          tags: invoiceiq-worker:${{ github.sha }}
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,scope=worker,mode=max
+
+      - name: Build web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/Dockerfile
+          target: web
+          push: false
+          load: true
+          tags: invoiceiq-web:${{ github.sha }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      # A green `docker build` only proves the image assembled. This proves it
+      # boots and reaches Postgres, Redis and object storage — the failure mode
+      # that a build check cannot see.
+      - name: Smoke test the api image against real dependencies
+        run: |
+          docker network create iq-ci
+
+          docker run -d --name pg --network iq-ci \
+            -e POSTGRES_USER=invoiceiq -e POSTGRES_PASSWORD=invoiceiq -e POSTGRES_DB=invoiceiq \
+            --health-cmd "pg_isready -U invoiceiq -d invoiceiq" --health-interval 5s --health-retries 20 \
+            pgvector/pgvector:pg16
+
+          docker run -d --name redis --network iq-ci \
+            --health-cmd "redis-cli ping" --health-interval 5s --health-retries 20 \
+            redis:7-alpine redis-server --appendonly yes --maxmemory-policy noeviction
+
+          docker run -d --name minio --network iq-ci \
+            -e MINIO_ROOT_USER=invoiceiq -e MINIO_ROOT_PASSWORD=invoiceiq-dev-secret \
+            --health-cmd "mc ready local" --health-interval 5s --health-retries 20 \
+            minio/minio:latest server /data
+
+          echo "Waiting for dependencies to report healthy..."
+          for c in pg redis minio; do
+            for i in $(seq 1 40); do
+              [ "$(docker inspect -f '{{.State.Health.Status}}' $c)" = "healthy" ] && break
+              sleep 3
+            done
+            docker inspect -f "$c => {{.State.Health.Status}}" $c
+          done
+
+          docker run --rm --network iq-ci minio/mc:latest sh -c \
+            "mc alias set local http://minio:9000 invoiceiq invoiceiq-dev-secret && \
+             mc mb --ignore-existing local/invoiceiq-documents"
+
+          export DB_URL="postgresql://invoiceiq:invoiceiq@pg:5432/invoiceiq?schema=public"
+
+          # Migrations run as a release command in production too, never on boot.
+          docker run --rm --network iq-ci -e DATABASE_URL="$DB_URL" \
+            --entrypoint sh invoiceiq-api:${{ github.sha }} -c \
+            "cd node_modules/@invoiceiq/database && ./node_modules/.bin/prisma migrate deploy"
+
+          docker run -d --name api --network iq-ci -p 3001:3001 \
+            -e DATABASE_URL="$DB_URL" \
+            -e REDIS_URL="redis://redis:6379" \
+            -e S3_ENDPOINT="http://minio:9000" -e S3_BUCKET=invoiceiq-documents \
+            -e S3_ACCESS_KEY_ID=invoiceiq -e S3_SECRET_ACCESS_KEY=invoiceiq-dev-secret \
+            -e S3_FORCE_PATH_STYLE=true -e S3_REGION=eu-south-1 \
+            -e JWT_SECRET=ci-secret-that-is-at-least-32-characters-long \
+            invoiceiq-api:${{ github.sha }}
+
+          echo "Polling readiness..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3001/api/v1/health/ready > /tmp/ready.json 2>/dev/null; then
+              echo "READY:"; cat /tmp/ready.json; exit 0
+            fi
+            sleep 2
+          done
+
+          echo "::error::API never became ready"
+          docker logs api
+          exit 1
+
+      - name: Smoke test the worker image
+        run: |
+          docker run -d --name worker --network iq-ci \
+            -e DATABASE_URL="postgresql://invoiceiq:invoiceiq@pg:5432/invoiceiq?schema=public" \
+            -e REDIS_URL="redis://redis:6379" \
+            -e S3_ENDPOINT="http://minio:9000" -e S3_BUCKET=invoiceiq-documents \
+            -e S3_ACCESS_KEY_ID=invoiceiq -e S3_SECRET_ACCESS_KEY=invoiceiq-dev-secret \
+            -e S3_FORCE_PATH_STYLE=true -e S3_REGION=eu-south-1 \
+            invoiceiq-worker:${{ github.sha }}
+
+          sleep 15
+          # The worker has no HTTP port; its Redis heartbeat is the liveness proof.
+          BEAT=$(docker run --rm --network iq-ci redis:7-alpine \
+                   redis-cli -h redis GET invoiceiq:worker:heartbeat)
+          echo "heartbeat: $BEAT"
+          if [ -z "$BEAT" ]; then
+            echo "::error::Worker did not write a heartbeat"
+            docker logs worker
+            exit 1
+          fi
+
+          # SIGTERM must drain cleanly and clear the heartbeat, or every deploy
+          # strands documents mid-PROCESSING.
+          docker stop -t 30 worker > /dev/null
+          AFTER=$(docker run --rm --network iq-ci redis:7-alpine \
+                    redis-cli -h redis EXISTS invoiceiq:worker:heartbeat)
+          echo "heartbeat exists after graceful stop (expect 0): $AFTER"
+          [ "$AFTER" = "0" ] || { echo "::error::Worker did not drain cleanly"; exit 1; }
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          for c in api worker pg redis minio; do
+            echo "===== $c ====="; docker logs "$c" 2>&1 | tail -50 || true
+          done

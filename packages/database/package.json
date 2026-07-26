@@ -16,7 +16,7 @@
     "prisma"
   ],
   "scripts": {
-    "db:generate": "dotenv -e ../../.env -- prisma generate",
+    "db:generate": "prisma generate",
     "db:migrate": "dotenv -e ../../.env -- prisma migrate dev",
     "db:migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
     "db:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
@@ -30,14 +30,14 @@
   "dependencies": {
     "@invoiceiq/domain": "workspace:*",
     "@node-rs/argon2": "^2.0.2",
-    "@prisma/client": "6.19.2"
+    "@prisma/client": "6.19.2",
+    "prisma": "6.19.2"
   },
   "devDependencies": {
     "@invoiceiq/config": "workspace:*",
     "@types/node": "^24.13.3",
     "dotenv-cli": "^8.0.0",
     "eslint": "^9.18.0",
-    "prisma": "6.19.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",
     "vitest": "^4.1.10"

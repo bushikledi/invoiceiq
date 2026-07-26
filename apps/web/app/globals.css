@@ -1,0 +1,25 @@
+@import 'tailwindcss';
+
+/*
+ * Status colours map 1:1 to DocumentStatus in the domain layer. Defining them
+ * once as tokens means a badge, a table row and a timeline entry cannot drift
+ * to different greens for COMPLETED.
+ */
+@theme {
+  --color-status-uploaded: oklch(0.72 0.02 250);
+  --color-status-queued: oklch(0.72 0.02 250);
+  --color-status-processing: oklch(0.68 0.15 250);
+  --color-status-extracted: oklch(0.68 0.15 250);
+  --color-status-validating: oklch(0.68 0.15 250);
+  --color-status-needs-review: oklch(0.75 0.16 75);
+  --color-status-completed: oklch(0.65 0.16 150);
+  --color-status-failed: oklch(0.62 0.2 25);
+}
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  @apply bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100;
+}

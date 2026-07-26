@@ -9,3 +9,5 @@ onlyBuiltDependencies:
   - prisma
   - esbuild
   - sharp
+  - '@nestjs/core'
+  - unrs-resolver

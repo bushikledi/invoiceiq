@@ -11,7 +11,7 @@
  */
 import { hash } from '@node-rs/argon2';
 import { MIN_PASSWORD_LENGTH, PASSWORD_HASH_PARAMS, normalizeEmail } from '@invoiceiq/domain';
-import { PrismaClient, UserRole } from '../generated/client/index.js';
+import { PrismaClient, UserRole } from '@prisma/client';
 
 const prisma = new PrismaClient();
 

@@ -9,8 +9,9 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "bootstrap": "pnpm install && pnpm infra:up && pnpm db:migrate && pnpm db:seed",
-    "infra:up": "docker compose -f infra/docker-compose.yml up -d postgres redis minio minio-setup",
+    "bootstrap": "pnpm install && pnpm infra:up && pnpm infra:wait && pnpm db:deploy && pnpm db:seed",
+    "infra:up": "docker compose -f infra/docker-compose.yml up -d --wait postgres redis minio && docker compose -f infra/docker-compose.yml up minio-setup",
+    "infra:wait": "docker compose -f infra/docker-compose.yml up -d --wait postgres redis minio",
     "infra:down": "docker compose -f infra/docker-compose.yml down",
     "infra:nuke": "docker compose -f infra/docker-compose.yml down -v",
     "dev": "turbo run dev",
@@ -24,7 +25,9 @@
     "test:coverage": "turbo run test:coverage",
     "test:integration": "turbo run test:integration",
     "test:e2e": "turbo run test:e2e",
+    "db:deploy": "pnpm --filter @invoiceiq/database db:migrate:deploy",
     "db:migrate": "pnpm --filter @invoiceiq/database db:migrate",
+    "db:reset": "pnpm --filter @invoiceiq/database db:reset",
     "db:seed": "pnpm --filter @invoiceiq/database db:seed",
     "db:studio": "pnpm --filter @invoiceiq/database db:studio",
     "format": "prettier --write \"**/*.{ts,tsx,js,cjs,mjs,json,md,yml,yaml}\"",

@@ -1,0 +1,268 @@
+// InvoiceIQ persistence model.
+//
+// Conventions:
+//   - Models are PascalCase, tables and columns snake_case via @@map/@map.
+//   - Workflow state lives in columns (queried constantly); the invoice payload
+//     itself lives in JSONB (shape owned by the Zod schema, evolves freely).
+//   - Money inside JSONB is integer minor units + currency code. Floats never
+//     touch money.
+//
+// Prisma is pinned to 6.x deliberately: Prisma 7 is ESM-only and requires a
+// driver adapter, which would force "type": "module" across every Nest app for
+// no benefit here. See docs/adr/0003-orm.md.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------- users & auth
+
+enum UserRole {
+  REVIEWER
+  ADMIN
+
+  @@map("user_role")
+}
+
+model User {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Stored lowercase; normalisation happens in the domain layer rather than
+  /// via CITEXT, so Prisma keeps a first-class String type on a column we
+  /// filter by constantly.
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(REVIEWER)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  refreshTokens   RefreshToken[]
+  documents       Document[]
+  reviewDecisions ReviewDecision[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @map("user_id") @db.Uuid
+
+  /// SHA-256 of the opaque token. The token itself is never stored, so a
+  /// database leak does not hand over live sessions.
+  tokenHash String @map("token_hash")
+
+  /// Rotation family. Presenting a token that has already been replaced means
+  /// it was stolen and replayed, so the entire family is revoked at once.
+  familyId String @map("family_id") @db.Uuid
+
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt  DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedBy String?   @map("replaced_by") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tokenHash])
+  @@index([userId, familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------- documents
+
+enum DocumentStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  EXTRACTED
+  VALIDATING
+  NEEDS_REVIEW
+  COMPLETED
+  FAILED
+
+  @@map("document_status")
+}
+
+model Document {
+  id         String @id @default(uuid()) @db.Uuid
+  uploaderId String @map("uploader_id") @db.Uuid
+
+  status DocumentStatus @default(UPLOADED)
+
+  originalName String @map("original_name")
+  s3Key        String @map("s3_key")
+
+  /// Dedupe key, idempotency key, and the LLM extraction cache key all in one.
+  contentSha256 String @map("content_sha256")
+
+  sizeBytes Int  @map("size_bytes")
+  pageCount Int? @map("page_count")
+
+  failureReason String? @map("failure_reason")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  uploader        User             @relation(fields: [uploaderId], references: [id])
+  events          DocumentEvent[]
+  extractions     Extraction[]
+  reviewDecisions ReviewDecision[]
+  chunks          DocumentChunk[]
+
+  /// Re-uploading the same bytes is a no-op rather than a duplicate document.
+  @@unique([uploaderId, contentSha256], map: "documents_dedupe")
+  @@index([status, createdAt(sort: Desc)], map: "documents_status_idx")
+  @@index([uploaderId, createdAt(sort: Desc), id(sort: Desc)], map: "documents_cursor_idx")
+  @@map("documents")
+}
+
+/// Append-only audit trail. Answers "why is this document stuck?" with a
+/// timeline instead of a guess.
+model DocumentEvent {
+  id         BigInt @id @default(autoincrement())
+  documentId String @map("document_id") @db.Uuid
+
+  /// 'STATUS_CHANGED' | 'LLM_RETRY' | 'RULE_FAILED' | 'REVIEW_SUBMITTED' | ...
+  type    String
+  payload Json   @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@map("document_events")
+}
+
+// ---------------------------------------------------------------- extraction
+
+model Extraction {
+  id         String @id @default(uuid()) @db.Uuid
+  documentId String @map("document_id") @db.Uuid
+
+  /// Human corrections create a new version rather than mutating v1, which
+  /// preserves the original for model-quality analysis and gives a clean audit.
+  version Int @default(1)
+
+  /// The Zod-validated invoice payload. Never written unvalidated.
+  data Json
+
+  /// Per-field { confidence, flagged, source } — 'llm' or 'human'.
+  fieldMeta Json @map("field_meta")
+
+  overallConfidence Decimal @map("overall_confidence") @db.Decimal(4, 3)
+
+  model String
+
+  /// Prompts are pinned like code, so quality regressions are attributable:
+  /// SELECT avg(overall_confidence) GROUP BY prompt_version.
+  promptVersion String @map("prompt_version")
+
+  attempts     Int
+  inputTokens  Int     @map("input_tokens")
+  outputTokens Int     @map("output_tokens")
+  costUsd      Decimal @map("cost_usd") @db.Decimal(10, 6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document           @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  findings ValidationFinding[]
+
+  @@unique([documentId, version])
+  @@map("extractions")
+}
+
+enum FindingSeverity {
+  ERROR
+  WARNING
+
+  @@map("finding_severity")
+}
+
+/// One row per failed or warned business rule.
+model ValidationFinding {
+  id           BigInt @id @default(autoincrement())
+  extractionId String @map("extraction_id") @db.Uuid
+
+  /// 'LINE_ITEM_MATH' | 'LINE_ITEMS_SUM' | 'VAT_ARITHMETIC' | 'DATE_SANITY' | ...
+  rule     String
+  severity FindingSeverity
+
+  /// e.g. 'lineItems[2].total'
+  fieldPath String? @map("field_path")
+  message   String
+
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz(6)
+
+  extraction Extraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+
+  @@index([extractionId])
+  @@map("validation_findings")
+}
+
+enum ReviewAction {
+  APPROVED
+  CORRECTED
+  REJECTED
+
+  @@map("review_action")
+}
+
+model ReviewDecision {
+  id         String @id @default(uuid()) @db.Uuid
+  documentId String @map("document_id") @db.Uuid
+  reviewerId String @map("reviewer_id") @db.Uuid
+
+  action ReviewAction
+
+  /// The changed fields only, as a list of { path, from, to }.
+  corrections Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  reviewer User     @relation(fields: [reviewerId], references: [id])
+
+  @@index([documentId, createdAt])
+  @@map("review_decisions")
+}
+
+// ---------------------------------------------------------------- search
+
+/// Embedded chunks for semantic search.
+///
+/// `embedding` is Unsupported because Prisma has no native pgvector type: reads
+/// and writes go through $queryRaw inside this package's repository layer and
+/// never leak outward. The HNSW index is created in the migration SQL.
+///
+/// Dimension is 384 to match the default local multilingual MiniLM embedder.
+/// Changing EMBEDDING_PROVIDER to openai (1536) requires a migration.
+model DocumentChunk {
+  id         String @id @default(uuid()) @db.Uuid
+  documentId String @map("document_id") @db.Uuid
+
+  chunkIndex Int @map("chunk_index")
+
+  /// 'raw' for text extracted from the PDF, 'synthetic' for the generated
+  /// summary chunk built from structured data — the latter is what makes
+  /// queries like "chairs from the Milan vendor" actually hit.
+  kind String @default("raw")
+
+  content   String
+  embedding Unsupported("vector(384)")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@map("document_chunks")
+}

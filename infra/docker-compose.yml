@@ -1,0 +1,92 @@
+name: invoiceiq
+
+# Local development stack. `pnpm infra:up` starts only the datastores;
+# api/worker/web run on the host with hot reload. The full containerised
+# stack (used by Playwright in CI) lives in docker-compose.test.yml.
+#
+# Every service has a healthcheck, and dependants wait on it. Without this,
+# `prisma migrate` races Postgres startup and fails intermittently — the
+# classic flaky-onboarding bug.
+#
+# PORTS: InvoiceIQ deliberately avoids the default 5432/6379/9000 so it can run
+# alongside other local stacks without a port fight. Every mapping is
+# overridable from .env if even these collide on your machine.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: invoiceiq-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: invoiceiq
+      POSTGRES_PASSWORD: invoiceiq
+      POSTGRES_DB: invoiceiq
+      # Deterministic collation so ORDER BY is identical on every machine.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US --encoding=UTF8'
+    ports:
+      - '${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U invoiceiq -d invoiceiq']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: invoiceiq-redis
+    restart: unless-stopped
+    # BullMQ requires this eviction policy: dropping keys under memory pressure
+    # would silently lose jobs.
+    command: redis-server --appendonly yes --maxmemory-policy noeviction
+    ports:
+      - '${REDIS_PORT:-6380}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: invoiceiq-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: invoiceiq
+      MINIO_ROOT_PASSWORD: invoiceiq-dev-secret
+    ports:
+      - '${MINIO_PORT:-9100}:9000' # S3 API
+      - '${MINIO_CONSOLE_PORT:-9101}:9001' # web console
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # One-shot: creates the bucket and locks it down. Exits 0 and stays exited.
+  minio-setup:
+    image: minio/mc:latest
+    container_name: invoiceiq-minio-setup
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 invoiceiq invoiceiq-dev-secret &&
+      mc mb --ignore-existing local/invoiceiq-documents &&
+      mc anonymous set none local/invoiceiq-documents &&
+      echo 'bucket invoiceiq-documents ready (private)'
+      "
+    restart: 'no'
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

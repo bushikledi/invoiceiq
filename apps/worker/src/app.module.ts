@@ -1,61 +1,84 @@
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { LoggerModule } from 'nestjs-pino';
-import { loadWorkerEnv } from '@invoiceiq/config';
-import { WorkerConfigModule } from './config/config.module.js';
-import { NoopProcessor } from './processors/noop.processor.js';
+import type { WorkerEnv } from '@invoiceiq/config';
+import { WorkerConfigModule, WORKER_ENV } from './config/config.module.js';
+import { PrismaModule } from './infrastructure/prisma/prisma.module.js';
+import { StorageModule } from './infrastructure/storage/storage.module.js';
+import { LlmModule } from './ai/llm.module.js';
+import { ExtractDocumentProcessor } from './pipeline/extract-document.processor.js';
 import { QUEUE_EMBEDDING, QUEUE_EXTRACTION } from './queues.js';
 import { HeartbeatService } from './health/heartbeat.service.js';
-
-const env = loadWorkerEnv(process.env);
 
 @Module({
   imports: [
     WorkerConfigModule,
 
-    LoggerModule.forRoot({
-      pinoHttp: {
-        level: env.LOG_LEVEL,
-        transport:
-          env.NODE_ENV === 'development'
-            ? { target: 'pino-pretty', options: { singleLine: true, translateTime: 'HH:MM:ss.l' } }
-            : undefined,
-        // The worker serves no HTTP traffic; request autologging would only
-        // emit noise.
-        autoLogging: false,
-      },
+    LoggerModule.forRootAsync({
+      inject: [WORKER_ENV],
+      useFactory: (env: WorkerEnv) => ({
+        pinoHttp: {
+          level: env.LOG_LEVEL,
+          transport:
+            env.NODE_ENV === 'development'
+              ? {
+                  target: 'pino-pretty',
+                  options: { singleLine: true, translateTime: 'HH:MM:ss.l' },
+                }
+              : undefined,
+          // No HTTP surface here; request autologging would only emit noise.
+          autoLogging: false,
+        },
+      }),
     }),
 
-    BullModule.forRoot({
-      connection: {
-        url: env.REDIS_URL,
-        // BullMQ blocks on BRPOPLPUSH; a retry ceiling would abort those reads.
-        maxRetriesPerRequest: null,
-      },
+    BullModule.forRootAsync({
+      inject: [WORKER_ENV],
+      useFactory: (env: WorkerEnv) => ({
+        connection: {
+          url: env.REDIS_URL,
+          // BullMQ blocks on BRPOPLPUSH; a retry ceiling would abort those reads.
+          maxRetriesPerRequest: null,
+        },
+      }),
     }),
 
-    BullModule.registerQueue(
+    BullModule.registerQueueAsync(
       {
         name: QUEUE_EXTRACTION,
-        defaultJobOptions: {
-          attempts: 3,
-          backoff: { type: 'exponential', delay: 5_000 },
-          // Keep failures around for post-mortems, but bounded.
-          removeOnComplete: { age: 3_600, count: 1_000 },
-          removeOnFail: { age: 7 * 24 * 3_600 },
-        },
+        inject: [WORKER_ENV],
+        useFactory: (env: WorkerEnv) => ({
+          defaultJobOptions: {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5_000 },
+            removeOnComplete: { age: 3_600, count: 1_000 },
+            // Failures survive a week so a post-mortem has something to read.
+            removeOnFail: { age: 7 * 24 * 3_600 },
+          },
+          limiter: {
+            // A blunt ceiling on spend, independent of provider rate limits.
+            max: env.EXTRACTION_RATE_LIMIT_PER_MINUTE,
+            duration: 60_000,
+          },
+        }),
       },
       {
         name: QUEUE_EMBEDDING,
-        defaultJobOptions: {
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 2_000 },
-          removeOnComplete: { age: 3_600, count: 1_000 },
-          removeOnFail: { age: 7 * 24 * 3_600 },
-        },
+        useFactory: () => ({
+          defaultJobOptions: {
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 2_000 },
+            removeOnComplete: { age: 3_600, count: 1_000 },
+            removeOnFail: { age: 7 * 24 * 3_600 },
+          },
+        }),
       },
     ),
+
+    PrismaModule,
+    StorageModule,
+    LlmModule,
   ],
-  providers: [NoopProcessor, HeartbeatService],
+  providers: [ExtractDocumentProcessor, HeartbeatService],
 })
 export class WorkerAppModule {}

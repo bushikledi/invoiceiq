@@ -1,8 +1,12 @@
--- pgvector must exist before document_chunks declares a vector(384) column.
--- This is why the extension is created in migration SQL rather than via the
--- `postgresqlExtensions` preview feature: the ordering has to be explicit, and
--- the HNSW index below cannot be expressed in the Prisma schema at all.
+-- InvoiceIQ initial schema.
+--
+-- pgvector must exist before document_chunks declares a vector(384) column,
+-- which is why the extension is created here rather than via the
+-- `postgresqlExtensions` preview feature: the ordering has to be explicit.
 CREATE EXTENSION IF NOT EXISTS vector;
+
+-- CreateSchema
+CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateEnum
 CREATE TYPE "user_role" AS ENUM ('REVIEWER', 'ADMIN');
@@ -49,7 +53,7 @@ CREATE TABLE "documents" (
     "status" "document_status" NOT NULL DEFAULT 'UPLOADED',
     "original_name" TEXT NOT NULL,
     "s3_key" TEXT NOT NULL,
-    "content_sha256" TEXT NOT NULL,
+    "content_sha256" TEXT,
     "size_bytes" INTEGER NOT NULL,
     "page_count" INTEGER,
     "failure_reason" TEXT,
@@ -161,6 +165,9 @@ CREATE INDEX "validation_findings_extraction_id_idx" ON "validation_findings"("e
 CREATE INDEX "review_decisions_document_id_created_at_idx" ON "review_decisions"("document_id", "created_at");
 
 -- CreateIndex
+CREATE INDEX "document_chunks_document_id_idx" ON "document_chunks"("document_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "document_chunks_document_id_chunk_index_key" ON "document_chunks"("document_id", "chunk_index");
 
 -- AddForeignKey
@@ -187,14 +194,23 @@ ALTER TABLE "review_decisions" ADD CONSTRAINT "review_decisions_reviewer_id_fkey
 -- AddForeignKey
 ALTER TABLE "document_chunks" ADD CONSTRAINT "document_chunks_document_id_fkey" FOREIGN KEY ("document_id") REFERENCES "documents"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- HNSW over IVFFlat: no training step, so it works correctly with 5 seed rows,
--- and it gives better recall/latency at this scale. Build cost is irrelevant
--- for a corpus this size.
+-- ---------------------------------------------------------------------------
+-- WARNING TO FUTURE MIGRATIONS
 --
+-- Prisma cannot express an HNSW index, so it does not know this exists. That
+-- means `prisma migrate dev` treats it as drift and emits a DROP INDEX for it
+-- in the very next generated migration -- silently, with no error. Vector
+-- search then falls back to a sequential scan: still correct, just slow, which
+-- is the worst kind of regression because nothing fails.
+--
+-- If you regenerate a migration, CHECK IT for `DROP INDEX
+-- "document_chunks_embedding_idx"` and delete that line. The integration test
+-- `search index integrity` asserts this index exists precisely so CI catches
+-- the mistake if you forget.
+--
+-- HNSW over IVFFlat: no training step, so it works correctly with 5 seed rows,
+-- and it gives better recall/latency at this scale.
 -- vector_cosine_ops must match the operator used at query time (<=>).
+-- ---------------------------------------------------------------------------
 CREATE INDEX "document_chunks_embedding_idx"
   ON "document_chunks" USING hnsw ("embedding" vector_cosine_ops);
-
--- Supports filtering search results down to a single document.
-CREATE INDEX "document_chunks_document_id_idx"
-  ON "document_chunks" ("document_id");

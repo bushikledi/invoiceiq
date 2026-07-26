@@ -100,7 +100,12 @@ model Document {
   s3Key        String @map("s3_key")
 
   /// Dedupe key, idempotency key, and the LLM extraction cache key all in one.
-  contentSha256 String @map("content_sha256")
+  ///
+  /// Null between presign and completion: the hash cannot exist until the bytes
+  /// do. Postgres treats NULLs as distinct in a unique index, so a user may
+  /// have any number of uploads in flight without tripping the dedupe
+  /// constraint — which is exactly the behaviour we want.
+  contentSha256 String? @map("content_sha256")
 
   sizeBytes Int  @map("size_bytes")
   pageCount Int? @map("page_count")
@@ -263,5 +268,9 @@ model DocumentChunk {
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
 
   @@unique([documentId, chunkIndex])
+  /// Declared here rather than in raw SQL so Prisma owns it. Anything Prisma
+  /// does not know about is treated as drift and DROPped by the next generated
+  /// migration -- see the warning above the HNSW index in the init migration.
+  @@index([documentId])
   @@map("document_chunks")
 }

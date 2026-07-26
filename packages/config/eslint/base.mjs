@@ -44,10 +44,19 @@ export default tseslint.config(
     },
   },
   {
+    // Integration tests assert against HTTP response bodies, which supertest
+    // types as `any` because JSON genuinely is untyped at the wire. Enforcing
+    // strict-any rules here would mean casting every assertion for no safety
+    // gain — the assertion *is* the check. These rules stay on in src/, where
+    // an implicit `any` really can hide a bug.
     files: ['**/*.test.ts', '**/*.spec.ts', '**/test/**', '**/e2e/**'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',
       '@typescript-eslint/no-unsafe-member-access': 'off',
+      '@typescript-eslint/no-unsafe-call': 'off',
+      '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/no-unsafe-argument': 'off',
+      '@typescript-eslint/no-unnecessary-type-assertion': 'off',
       '@typescript-eslint/no-non-null-assertion': 'off',
       'no-restricted-syntax': 'off',
     },

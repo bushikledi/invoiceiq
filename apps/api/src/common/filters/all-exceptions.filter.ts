@@ -8,6 +8,7 @@ import {
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import { ZodError } from 'zod';
 import {
+  PROBLEM_STATUS,
   buildProblem,
   type FieldError,
   type ProblemDetails,
@@ -160,7 +161,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
           ? stringifyMessage(payload.message)
           : exception.message;
 
-    return buildProblem({ type, traceId, status, detail });
+    // Nest's built-in pipes (ParseUUIDPipe and friends) raise 400, while our
+    // Zod pipe produces 422. Both are validation failures and clients branch on
+    // `type`, so emitting two different statuses for one type is inconsistency
+    // the client has to absorb for nothing. Normalise to the canonical status
+    // for the type; every other status passes through unchanged.
+    const normalizedStatus = type === 'validation_error' ? PROBLEM_STATUS[type] : status;
+
+    return buildProblem({ type, traceId, status: normalizedStatus, detail });
   }
 }
 

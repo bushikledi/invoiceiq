@@ -1,0 +1,39 @@
+{
+  "name": "@invoiceiq/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared tsconfig/eslint presets and the Zod-validated environment schema",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./tsconfig/*": "./tsconfig/*",
+    "./eslint/*": "./eslint/*"
+  },
+  "files": [
+    "dist",
+    "tsconfig",
+    "eslint"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "lint": "eslint src",
+    "test:unit": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@types/node": "^24.13.3",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^10.0.1",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.21.0",
+    "vitest": "^4.1.10"
+  }
+}

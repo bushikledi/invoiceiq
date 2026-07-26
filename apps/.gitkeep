@@ -1,0 +1,2 @@
+# apps/ is populated at M2 (api, worker, web). This keeps the
+# dependency-cruiser target path valid before then.

@@ -1,0 +1,11 @@
+{
+  // Editor + ESLint project service only. `noEmit` guarantees that a stray
+  // `tsc -p .` can never scatter compiled output next to the sources —
+  // emitting is exclusively tsconfig.build.json's job.
+  "extends": "./tsconfig/library.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false
+  },
+  "include": ["src/**/*.ts", "eslint/**/*.mjs", "*.config.mjs"]
+}

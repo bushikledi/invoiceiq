@@ -1,0 +1,27 @@
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+.turbo/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+.DS_Store
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+playwright-report/
+test-results/
+blob-report/
+
+# Generated Prisma client
+packages/database/generated/
+
+# Locally cached embedding models (see M9)
+.models/

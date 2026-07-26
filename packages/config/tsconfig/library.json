@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "display": "InvoiceIQ library (pure TS package)",
+  "extends": "./base.json",
+  "compilerOptions": {
+    "composite": true,
+    "isolatedModules": true
+  }
+  // NOTE: rootDir/outDir are deliberately absent. Relative paths inside a
+  // tsconfig are resolved against the file that declares them, so setting
+  // "rootDir": "./src" here would mean packages/config/tsconfig/src for every
+  // package that extends it. Each package declares its own.
+}

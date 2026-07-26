@@ -1,0 +1,13 @@
+node_modules
+dist
+.next
+.turbo
+coverage
+pnpm-lock.yaml
+packages/database/generated
+packages/ai/src/fixtures
+docs/architecture-graph.svg
+
+# The original architecture spec is an input document, not project source.
+# Leave its formatting exactly as the author wrote it.
+invoiceiq-implementation-plan.md

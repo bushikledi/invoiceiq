@@ -164,9 +164,15 @@ jobs:
             docker inspect -f "$c => {{.State.Health.Status}}" $c
           done
 
-          docker run --rm --network iq-ci minio/mc:latest sh -c \
+          # --entrypoint sh is required: the minio/mc image's entrypoint is `mc`
+          # itself, so a bare `docker run minio/mc sh -c ...` passes "sh" as an
+          # mc subcommand and fails with "`sh` is not a recognized command".
+          # The bucket then never exists and the API's HeadBucket readiness
+          # probe can never pass.
+          docker run --rm --network iq-ci --entrypoint sh minio/mc:latest -c \
             "mc alias set local http://minio:9000 invoiceiq invoiceiq-dev-secret && \
-             mc mb --ignore-existing local/invoiceiq-documents"
+             mc mb --ignore-existing local/invoiceiq-documents && \
+             mc anonymous set none local/invoiceiq-documents"
 
           export DB_URL="postgresql://invoiceiq:invoiceiq@pg:5432/invoiceiq?schema=public"
 

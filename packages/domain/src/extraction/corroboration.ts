@@ -15,8 +15,26 @@
  * extracted amount is in that set.
  */
 
-/** Matches a run of digits with optional thousands/decimal separators. */
-const NUMBER_TOKEN = /\d[\d.,\s\u00A0\u202F]*\d|\d/g;
+/**
+ * Matches one printed number.
+ *
+ * The structure is deliberate rather than a loose character class. An earlier
+ * version allowed `\s` inside the token, which meant two column-aligned amounts
+ *
+ *     Sedie ufficio     4 x 245,00     980,00
+ *
+ * merged into the single number 24500980 \u2014 and since invoices are almost
+ * entirely columns of numbers, corroboration silently failed on nearly every
+ * real document while still passing a naive test.
+ *
+ * So a separator is only accepted where a thousands group genuinely belongs:
+ * followed by exactly three digits. A space is allowed there (French prints
+ * "1 240,50") but can never span a column gap or a line break.
+ *
+ *   alternative 1: grouped thousands, optional decimals   1.240,50  1 240,50
+ *   alternative 2: plain digits with optional decimals    980,00    151280
+ */
+const NUMBER_TOKEN = /\d{1,3}(?:[.,\u00A0\u202F ]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?/g;
 
 /**
  * Converts a printed number to integer minor units.

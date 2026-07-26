@@ -1,0 +1,43 @@
+{
+  "name": "@invoiceiq/ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LlmExtractor port, provider adapters, the corrective retry loop, and recorded fixtures.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "samples"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit",
+    "lint": "eslint src",
+    "test:unit": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "generate:samples": "tsx scripts/generate-samples.ts",
+    "record:fixtures": "tsx scripts/record-fixtures.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@invoiceiq/domain": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@invoiceiq/config": "workspace:*",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^4.1.10",
+    "eslint": "^9.18.0",
+    "pdf-lib": "^1.17.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "unpdf": "^1.8.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "extends": "@invoiceiq/config/tsconfig/library.json",
+  "compilerOptions": { "noEmit": true, "composite": false },
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "vitest.config.ts"]
+}

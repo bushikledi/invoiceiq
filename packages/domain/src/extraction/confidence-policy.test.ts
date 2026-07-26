@@ -96,6 +96,32 @@ describe('extractAmounts', () => {
   it('does not invent amounts that are absent', () => {
     expect(extractAmounts(SOURCE_TEXT).has(999_999)).toBe(false);
   });
+
+  it('does NOT merge column-aligned amounts into one number', () => {
+    // Regression. The tokeniser once allowed \s inside a number, so
+    //     "4 x 245,00     980,00"
+    // parsed as the single value 24500980 and neither real amount was found.
+    // Invoices are almost entirely columns of numbers, so this failed
+    // corroboration on essentially every document while still looking fine in
+    // a naive test.
+    const amounts = extractAmounts('Sedie ufficio     4 x 245,00     980,00');
+
+    expect(amounts.has(24_500)).toBe(true);
+    expect(amounts.has(98_000)).toBe(true);
+    expect(amounts.has(24_500_980)).toBe(false);
+  });
+
+  it('does not merge numbers across a line break', () => {
+    const amounts = extractAmounts('Imponibile 1.240,00\nIVA 22% 272,80');
+    expect(amounts.has(124_000)).toBe(true);
+    expect(amounts.has(27_280)).toBe(true);
+  });
+
+  it('still reads a space-separated thousands group', () => {
+    // French invoices print "1 240,50"; a single space before exactly three
+    // digits is a genuine thousands separator, unlike a column gap.
+    expect(extractAmounts('Total 1 240,50').has(124_050)).toBe(true);
+  });
 });
 
 describe('assessConfidence', () => {

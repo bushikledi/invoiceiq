@@ -1,6 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, type HealthCheckResult } from '@nestjs/terminus';
+import { SkipThrottle } from '@nestjs/throttler';
 import { DependencyHealthIndicator } from './dependency.health.js';
+import { Public } from '../auth/auth.decorators.js';
 
 /**
  * Liveness and readiness are genuinely different questions, and conflating them
@@ -11,6 +13,12 @@ import { DependencyHealthIndicator } from './dependency.health.js';
  *   /health/ready  can it actually serve traffic?     -> route to me if so
  */
 @Controller('health')
+// Load balancers and container orchestrators cannot present a bearer token, so
+// these must stay public. They are also exempt from rate limiting: throttling a
+// readiness probe would take a healthy instance out of rotation under load,
+// which is precisely backwards.
+@Public()
+@SkipThrottle()
 export class HealthController {
   constructor(
     private readonly health: HealthCheckService,

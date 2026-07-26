@@ -15,7 +15,9 @@ const NodeEnv = z.enum(['development', 'test', 'production']);
 /** Shared by every process. */
 export const BaseEnvSchema = z.object({
   NODE_ENV: NodeEnv.default('development'),
-  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  // 'silent' is a real pino level and the right one for test runs — otherwise
+  // every integration suite drowns its own assertions in request logs.
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 
   DATABASE_URL: z.string().min(1),
   REDIS_URL: z.string().min(1),

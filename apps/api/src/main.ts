@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
 import { loadApiEnv } from '@invoiceiq/config';
 import { AppModule } from './app.module.js';
 
@@ -19,6 +20,10 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix('api/v1');
 
   app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+
+  // The refresh token arrives as an httpOnly cookie, so it never passes through
+  // JavaScript on the client and is not readable by XSS.
+  app.use(cookieParser());
 
   // Exact origins only. A wildcard is incompatible with credentialed requests,
   // and the refresh token travels as a cookie.

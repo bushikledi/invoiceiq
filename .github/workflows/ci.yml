@@ -68,6 +68,11 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:unit
+      # Coverage as a separate gate: packages/domain declares thresholds (90%
+      # lines/functions, 85% branches) and a threshold nobody enforces is just
+      # a comment. This is the layer every other layer trusts, so dropping
+      # below the bar fails the build rather than printing in red.
+      - run: pnpm test:coverage
 
   integration:
     name: Integration tests

@@ -8,9 +8,9 @@ name: invoiceiq
 # `prisma migrate` races Postgres startup and fails intermittently — the
 # classic flaky-onboarding bug.
 #
-# PORTS: InvoiceIQ deliberately avoids the default 5432/6379/9000 so it can run
-# alongside other local stacks without a port fight. Every mapping is
-# overridable from .env if even these collide on your machine.
+# PORTS: standard defaults. If another local stack already owns 5432/6379/9000,
+# override POSTGRES_PORT / REDIS_PORT / MINIO_PORT / MINIO_CONSOLE_PORT in .env
+# rather than editing this file.
 
 services:
   postgres:
@@ -24,7 +24,7 @@ services:
       # Deterministic collation so ORDER BY is identical on every machine.
       POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US --encoding=UTF8'
     ports:
-      - '${POSTGRES_PORT:-5433}:5432'
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -42,7 +42,7 @@ services:
     # would silently lose jobs.
     command: redis-server --appendonly yes --maxmemory-policy noeviction
     ports:
-      - '${REDIS_PORT:-6380}:6379'
+      - '${REDIS_PORT:-6379}:6379'
     volumes:
       - redis-data:/data
     healthcheck:
@@ -60,8 +60,8 @@ services:
       MINIO_ROOT_USER: invoiceiq
       MINIO_ROOT_PASSWORD: invoiceiq-dev-secret
     ports:
-      - '${MINIO_PORT:-9100}:9000' # S3 API
-      - '${MINIO_CONSOLE_PORT:-9101}:9001' # web console
+      - '${MINIO_PORT:-9000}:9000' # S3 API
+      - '${MINIO_CONSOLE_PORT:-9001}:9001' # web console
     volumes:
       - minio-data:/data
     healthcheck:

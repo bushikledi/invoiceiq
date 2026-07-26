@@ -12,11 +12,16 @@
       "cache": false
     },
     "typecheck": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "db:generate"],
       "outputs": []
     },
     "lint": {
-      "dependsOn": ["^build"],
+      // `db:generate` as well as `^build`: without the generated Prisma client,
+      // `new PrismaClient()` is an `any` and type-aware lint rules fail inside
+      // packages/database itself. `^build` covers *dependencies'* builds, not a
+      // package's own codegen, so this was green locally (client already
+      // generated) and red on a clean CI checkout.
+      "dependsOn": ["^build", "db:generate"],
       "outputs": []
     },
     "test:unit": {

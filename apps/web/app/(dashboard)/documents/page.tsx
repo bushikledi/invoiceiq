@@ -9,6 +9,7 @@ import { formatBytes, formatRelative } from '../../../lib/format';
 import { StatusBadge, isInFlight } from '../../../components/status-badge';
 import { EmptyState, ErrorState, LoadingRows } from '../../../components/states';
 import { UploadDropzone } from '../../../components/upload-dropzone';
+import { StatStrip } from '../../../components/stat-strip';
 
 const FILTERS: { label: string; value: DocumentStatus | 'ALL' }[] = [
   { label: 'All', value: 'ALL' },
@@ -47,6 +48,8 @@ export default function DocumentsPage() {
           Upload an invoice and watch it move through extraction and validation.
         </p>
       </div>
+
+      <StatStrip />
 
       <UploadDropzone />
 

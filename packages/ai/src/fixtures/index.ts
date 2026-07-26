@@ -148,6 +148,36 @@ const MULTI_RATE = {
 };
 
 /**
+ * The long multi-page sample: 12 identical stock lines.
+ *
+ * Exists so the truncation path (first + last page) is exercised by a document
+ * that actually has a fixture. Without one it fell back to the clean invoice,
+ * scored 0.50 because nothing corroborated, and looked like a defect in the
+ * demo rather than the absence of a mapping.
+ */
+const LONG_MULTIPAGE = {
+  ...CLEAN_INVOICE,
+  invoiceNumber: 'INV-288',
+  vendor: {
+    name: 'Fornitura Generale S.p.A.',
+    vatNumber: 'IT11223344556',
+    address: 'Viale Certosa 210, 20156 Milano MI',
+  },
+  issueDate: '2026-05-05',
+  dueDate: '2026-06-04',
+  lineItems: Array.from({ length: 12 }, (_, i) => ({
+    description: `Articolo di magazzino ${String(i + 1).padStart(3, '0')}`,
+    quantity: 3,
+    unitPriceCents: 2_500,
+    vatRatePercent: 22,
+    totalCents: 7_500,
+  })),
+  subtotalCents: 90_000,
+  vatTotalCents: 19_800,
+  totalCents: 109_800,
+};
+
+/**
  * A schema-invalid reply.
  *
  * Fractional cents and a string where a number belongs — the two mistakes a
@@ -188,6 +218,10 @@ export const FIXTURES: FixtureLibrary = {
   'multi-rate': {
     responses: [MULTI_RATE],
     usage: { inputTokens: 1_522, outputTokens: 430 },
+  },
+  'long-multipage': {
+    responses: [LONG_MULTIPAGE],
+    usage: { inputTokens: 3_180, outputTokens: 812 },
   },
   'malformed-then-valid': {
     // First call fails the schema; the corrective feedback fixes it.
@@ -242,6 +276,7 @@ const SCENARIO_BY_INVOICE_NUMBER: Record<string, FixtureScenarioName> = {
   'INV-255': 'missing-vat-number',
   'INV-262': 'hallucinated-total',
   'INV-270': 'multi-rate',
+  'INV-288': 'long-multipage',
 };
 
 export function resolveScenarioFromText(text: string): FixtureScenarioName | undefined {

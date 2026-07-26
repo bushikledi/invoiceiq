@@ -7,12 +7,14 @@ import {
   type DocumentFileResponse,
   type DocumentSummary,
   type ListDocumentsQuery,
+  type DocumentStats,
   type ListDocumentsResponse,
 } from '@invoiceiq/contracts';
 import type { AuthenticatedUser } from '@invoiceiq/contracts';
 import { CurrentUser } from '../auth/auth.decorators.js';
 import { ZodBody, ZodQuery } from '../../common/validation/zod-validation.pipe.js';
 import { DocumentsService } from './documents.service.js';
+import { StatsService } from './stats.service.js';
 
 /**
  * Documents.
@@ -23,7 +25,10 @@ import { DocumentsService } from './documents.service.js';
  */
 @Controller('documents')
 export class DocumentsController {
-  constructor(private readonly documents: DocumentsService) {}
+  constructor(
+    private readonly documents: DocumentsService,
+    private readonly stats: StatsService,
+  ) {}
 
   /** Step 1 of the upload dance: reserve a row, return a presigned PUT. */
   @Post('uploads')
@@ -43,6 +48,15 @@ export class DocumentsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<DocumentSummary> {
     return this.documents.completeUpload(user.id, id);
+  }
+
+  /**
+   * Declared before `:id`, because Nest matches routes in declaration order and
+   * `/documents/stats` would otherwise be parsed as a document id.
+   */
+  @Get('stats')
+  statsFor(@CurrentUser() user: AuthenticatedUser): Promise<DocumentStats> {
+    return this.stats.forUser(user.id);
   }
 
   @Get()

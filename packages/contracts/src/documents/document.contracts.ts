@@ -96,3 +96,25 @@ export const UPLOAD_REJECTIONS = {
   TOO_LARGE: 'Uploaded file exceeds the maximum size',
   NOT_A_PDF: 'File does not begin with the %PDF- signature',
 } as const;
+
+/**
+ * Dashboard headline figures.
+ *
+ * Chosen because they answer the three questions someone evaluating this
+ * system actually asks: does it work, how much human effort does it save, and
+ * what does it cost?
+ */
+export const DocumentStatsSchema = z.object({
+  total: z.int(),
+  completed: z.int(),
+  needsReview: z.int(),
+  failed: z.int(),
+  processing: z.int(),
+  /** Share of extracted documents that needed no human at all, 0..1. */
+  autoApprovedRatio: z.number(),
+  /** Cumulative USD across every extraction, including retried attempts. */
+  totalCostUsd: z.number(),
+  /** Mean cost per document that produced an extraction. */
+  averageCostUsd: z.number(),
+});
+export type DocumentStats = z.infer<typeof DocumentStatsSchema>;

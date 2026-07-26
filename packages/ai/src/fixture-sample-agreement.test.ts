@@ -29,7 +29,13 @@ async function textOf(slug: string): Promise<string> {
 }
 
 /** Scenarios that have a matching sample PDF. */
-const PAIRED = ['clean-invoice', 'sum-mismatch', 'missing-vat-number', 'multi-rate'] as const;
+const PAIRED = [
+  'clean-invoice',
+  'sum-mismatch',
+  'missing-vat-number',
+  'multi-rate',
+  'long-multipage',
+] as const;
 
 describe('fixtures agree with their sample PDFs', () => {
   it.each(PAIRED)('%s: no field claims a value the document lacks', async (slug) => {

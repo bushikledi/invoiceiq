@@ -31,12 +31,16 @@
     "db:seed": "pnpm --filter @invoiceiq/database db:seed",
     "db:studio": "pnpm --filter @invoiceiq/database db:studio",
     "format": "prettier --write \"**/*.{ts,tsx,js,cjs,mjs,json,md,yml,yaml}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,cjs,mjs,json,md,yml,yaml}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,cjs,mjs,json,md,yml,yaml}\"",
+    "seed:demo": "dotenv -e .env -- tsx scripts/seed-demo.ts",
+    "dev:stack": "bash scripts/dev-stack.sh"
   },
   "devDependencies": {
     "@invoiceiq/config": "workspace:*",
     "dependency-cruiser": "^18.1.0",
+    "dotenv-cli": "^8.0.0",
     "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
     "turbo": "^2.10.7",
     "typescript": "^5.7.3"
   }

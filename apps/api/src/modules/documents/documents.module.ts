@@ -4,6 +4,7 @@ import type { ApiEnv } from '@invoiceiq/config';
 import { API_ENV } from '../../config/config.module.js';
 import { DocumentsController } from './documents.controller.js';
 import { DocumentsService } from './documents.service.js';
+import { StatsService } from './stats.service.js';
 import { QUEUE_EXTRACTION } from './queue.constants.js';
 
 @Module({
@@ -32,7 +33,7 @@ import { QUEUE_EXTRACTION } from './queue.constants.js';
     }),
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService],
-  exports: [DocumentsService],
+  providers: [DocumentsService, StatsService],
+  exports: [DocumentsService, StatsService],
 })
 export class DocumentsModule {}

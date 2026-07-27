@@ -49,6 +49,27 @@ export interface ExtractionResponse {
 
 export interface LlmExtractor {
   extract(request: ExtractionRequest): Promise<ExtractionResponse>;
+
+  /**
+   * What this extractor will report as `model` on a first-attempt response.
+   *
+   * Needed because the extraction cache asks "has *this answerer* already
+   * answered this question about these bytes?", and the only honest way to
+   * compare is against the identity the adapter will actually record. Deriving
+   * it from configuration instead looks equivalent and is not: under the
+   * fixture provider `LLM_MODEL` says `claude-haiku-…` while every stored row
+   * says `fixture-model`, so a configuration-keyed cache never matches — dead
+   * in precisely the setup the whole test suite runs in, and silently, because
+   * a cache that always misses behaves exactly like a cache that is working
+   * and simply has nothing to reuse.
+   *
+   * "First-attempt" is the meaningful qualifier for a tiering wrapper: escalated
+   * responses record the stronger model, so they will not be reused under the
+   * cheap-tier key. That is the conservative direction — a document that needed
+   * escalation once is re-run from the cheap tier, which is what would happen
+   * anyway.
+   */
+  readonly modelId: string;
 }
 
 /**

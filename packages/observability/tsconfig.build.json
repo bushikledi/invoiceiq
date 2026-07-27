@@ -1,0 +1,15 @@
+{
+  "extends": "@invoiceiq/config/tsconfig/library.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+  },
+  // tsBuildInfoFile lives INSIDE outDir on purpose. TypeScript's default puts
+  // it beside the tsconfig, so anything that wipes dist (nest build's
+  // deleteOutDir, a Docker layer, `rm -rf dist`) leaves a buildinfo claiming
+  // the output is current -- and the next build emits nothing, silently, with
+  // exit code 0. Keeping them in the same directory keeps them in sync.
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

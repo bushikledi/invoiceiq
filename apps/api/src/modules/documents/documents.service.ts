@@ -2,7 +2,15 @@ import { Injectable } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import type { Queue } from 'bullmq';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
-import { ConflictError, NotFoundError, ValidationError, assertTransition } from '@invoiceiq/domain';
+import {
+  ConflictError,
+  NotFoundError,
+  ValidationError,
+  assertTransition,
+  canRequeue,
+  reclaimAfterMinutes,
+  systemClock,
+} from '@invoiceiq/domain';
 import {
   MAX_UPLOAD_BYTES,
   UPLOAD_REJECTIONS,
@@ -17,7 +25,7 @@ import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
 import { StorageService } from '../../infrastructure/storage/storage.service.js';
 import { currentTraceId } from '../../common/trace/trace-context.js';
 import { decodeCursor, encodeCursor } from './cursor.js';
-import { QUEUE_EXTRACTION, JOB_EXTRACT_DOCUMENT } from './queue.constants.js';
+import { QUEUE_EXTRACTION, JOB_EXTRACT_DOCUMENT, requeueJobId } from './queue.constants.js';
 
 /** `%PDF-` — the file signature every PDF must start with. */
 const PDF_MAGIC = Buffer.from('%PDF-', 'ascii');
@@ -169,6 +177,107 @@ export class DocumentsService {
       { documentId, contentSha256, traceId: currentTraceId() },
       { jobId: documentId },
     );
+  }
+
+  /**
+   * Puts a failed or stranded document back on the queue.
+   *
+   * The manual counterpart to the janitor. The janitor handles the case nobody
+   * is watching; this handles the case someone is — "extraction failed because
+   * the API key had expired, I have fixed it, run these six again" — without
+   * requiring re-upload or a hand-written UPDATE against production.
+   *
+   * Two guards, and they are different in kind. Ownership is authorisation:
+   * requeueing is a write, and a write to someone else's document must 404
+   * rather than 403, so the endpoint cannot be used to discover which ids
+   * exist. The `canRequeue` policy is correctness: it refuses to duplicate work
+   * that may still be in flight, and distinguishes "never" from "not yet" so
+   * the client can say something useful.
+   */
+  async requeue(userId: string, documentId: string, strandedAfterMinutes: number): Promise<DocumentSummary> {
+    const now = systemClock.now();
+
+    const document = await this.prisma.document.findFirst({
+      where: { id: documentId, uploaderId: userId },
+      select: { id: true, status: true, updatedAt: true, contentSha256: true },
+    });
+
+    if (!document) throw new NotFoundError('Document', documentId);
+
+    const verdict = canRequeue(document, now, strandedAfterMinutes);
+
+    if (!verdict.ok) {
+      if (verdict.reason.kind === 'ILLEGAL_TRANSITION') {
+        throw new ConflictError(`A ${verdict.reason.status} document cannot be requeued.`);
+      }
+
+      // Quote the window that actually applies to *this* status, not the base
+      // threshold. QUEUED is given four times as long as PROCESSING, and an
+      // operator told "try again in 15 minutes" who is then refused again at
+      // minute 16 has been given a number that was simply wrong.
+      const window = reclaimAfterMinutes(verdict.reason.status, strandedAfterMinutes);
+      const elapsed = Math.floor((now.getTime() - document.updatedAt.getTime()) / 60_000);
+
+      throw new ConflictError(
+        `This document has been ${verdict.reason.status.toLowerCase()} for ${elapsed} minute(s). ` +
+          `It can be requeued once that reaches ${window ?? strandedAfterMinutes}.`,
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Re-read under the transaction: between the check above and here the
+      // document may have completed, and resetting it to QUEUED would discard a
+      // finished extraction and pay for it again.
+      const current = await tx.document.findUniqueOrThrow({
+        where: { id: documentId },
+        select: { status: true },
+      });
+
+      if (current.status !== document.status) {
+        throw new ConflictError(
+          `This document changed to ${current.status} while the request was in flight.`,
+        );
+      }
+
+      // A document already in QUEUED is not transitioning anywhere — what is
+      // being replaced is a job that went missing, not the status. Rewriting
+      // QUEUED over QUEUED would also bump updatedAt, resetting the very timer
+      // that identified it as stuck and making it eligible again immediately.
+      let row;
+      if (current.status === 'QUEUED') {
+        row = await tx.document.findUniqueOrThrow({ where: { id: documentId } });
+      } else {
+        assertTransition(current.status, 'QUEUED');
+        row = await tx.document.update({
+          where: { id: documentId },
+          data: { status: 'QUEUED', failureReason: null },
+        });
+      }
+
+      await tx.documentEvent.create({
+        data: {
+          documentId,
+          type: 'RECLAIMED',
+          payload: { from: current.status, to: 'QUEUED', by: 'operator', userId },
+        },
+      });
+
+      return row;
+    });
+
+    await this.extractionQueue.add(
+      JOB_EXTRACT_DOCUMENT,
+      {
+        documentId,
+        contentSha256: document.contentSha256 ?? '',
+        traceId: currentTraceId(),
+      },
+      { jobId: requeueJobId(documentId, now.getTime()) },
+    );
+
+    this.logger.info({ documentId, from: document.status }, 'Document requeued by operator');
+
+    return toSummary(updated);
   }
 
   async list(userId: string, query: ListDocumentsQuery): Promise<ListDocumentsResponse> {

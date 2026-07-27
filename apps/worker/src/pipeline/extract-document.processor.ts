@@ -15,10 +15,12 @@ import {
   isOk,
   systemClock,
   validateInvoice,
+  type DocumentStatus,
   type Finding,
   type InvoiceExtraction,
 } from '@invoiceiq/domain';
 import { Prisma, type PrismaClient } from '@invoiceiq/database';
+import type { ExtractionOutcome } from '@invoiceiq/observability';
 import type { WorkerEnv } from '@invoiceiq/config';
 import { WORKER_ENV } from '../config/config.module.js';
 import { LLM_EXTRACTOR } from '../ai/llm.module.js';
@@ -32,6 +34,9 @@ import {
 } from '../queues.js';
 import { extractPdfText, truncateForPrompt } from './pdf-text.js';
 import { classifyError, TERMINAL_CODES } from './classify-error.js';
+import { ExtractionCacheService } from './extraction-cache.service.js';
+import { PipelineMetrics } from '../observability/pipeline.metrics.js';
+import { DocumentEventsPublisher } from '../events/document-events.service.js';
 
 /**
  * The extraction pipeline.
@@ -62,8 +67,43 @@ export class ExtractDocumentProcessor extends WorkerHost {
     @Inject(LLM_EXTRACTOR) private readonly llm: LlmExtractor,
     @Inject(WORKER_ENV) private readonly env: WorkerEnv,
     @InjectQueue(QUEUE_EMBEDDING) private readonly embeddingQueue: Queue,
+    private readonly cache: ExtractionCacheService,
+    private readonly metrics: PipelineMetrics,
+    private readonly events: DocumentEventsPublisher,
   ) {
     super();
+  }
+
+  /**
+   * Announces a committed status change.
+   *
+   * The uploader is read here rather than threaded through every call site,
+   * because the publisher needs it for authorisation filtering on the API side
+   * and forgetting it on one path would silently drop that document's events
+   * for the user who owns it. One extra indexed read per transition is a fair
+   * price for making that impossible.
+   */
+  private async announce(documentId: string, status: DocumentStatus): Promise<void> {
+    try {
+      const row = await this.prisma.document.findUnique({
+        where: { id: documentId },
+        select: { uploaderId: true, failureReason: true },
+      });
+
+      if (!row) return;
+
+      await this.events.publish({
+        documentId,
+        uploaderId: row.uploaderId,
+        status,
+        at: systemClock.now().toISOString(),
+        failureReason: row.failureReason,
+      });
+    } catch (error) {
+      // Best-effort by design — see DocumentEventsPublisher. The client's
+      // polling fallback covers a dropped announcement.
+      this.logger.warn(`Could not announce ${documentId} → ${status}: ${String(error)}`);
+    }
   }
 
   private get prisma(): PrismaClient {
@@ -90,21 +130,27 @@ export class ExtractDocumentProcessor extends WorkerHost {
 
     await this.transition(documentId, 'QUEUED', 'PROCESSING');
 
+    const startedAt = process.hrtime.bigint();
+    const elapsed = () => Number(process.hrtime.bigint() - startedAt) / 1e9;
+
     try {
-      const result = await this.runPipeline(document.s3Key, documentId, job);
+      const result = await this.runPipeline(document, job);
       log(`finished as ${result.status}`);
+      this.metrics.recordExtraction(outcomeLabel(result.status), elapsed(), result.cached === true);
       return result;
     } catch (error) {
-      return await this.handleFailure(documentId, error, job);
+      const failure = await this.handleFailure(documentId, error, job);
+      this.metrics.recordExtraction(outcomeLabel(failure.status), elapsed(), false);
+      return failure;
     }
   }
 
   private async runPipeline(
-    s3Key: string,
-    documentId: string,
+    document: { id: string; s3Key: string; contentSha256: string | null },
     job: Job<ExtractDocumentJob>,
-  ): Promise<{ status: string }> {
-    const bytes = await this.storage.download(s3Key);
+  ): Promise<{ status: string; cached?: boolean }> {
+    const documentId = document.id;
+    const bytes = await this.storage.download(document.s3Key);
 
     // Early rejection. A scanned PDF would otherwise be sent to the model,
     // which would invent an entire invoice from nothing and bill us for it.
@@ -112,34 +158,49 @@ export class ExtractDocumentProcessor extends WorkerHost {
 
     const promptText = truncateForPrompt(pdf, this.env.MAX_PROMPT_TOKENS);
 
-    const extraction = await extractWithRepair(this.llm, promptText, invoiceJsonSchema(), {
-      maxAttempts: this.env.MAX_EXTRACTION_ATTEMPTS,
-      onRetry: ({ attempt, issues }) => {
-        // Recorded as an event so a stuck document's history shows the model
-        // was corrected, not merely that it was slow.
-        void this.recordEvent(documentId, 'LLM_RETRY', { attempt, issues });
-      },
-    });
+    // The cache is consulted after the PDF is parsed, not before. Parsing is
+    // cheap and local; the source text is needed either way, because
+    // corroboration scores the extraction against *this* document's text rather
+    // than against whatever the cached one contained.
+    const cached = await this.lookupCache(document.contentSha256, documentId);
 
-    if (!isOk(extraction)) {
-      const failure = extraction.error;
+    let data: InvoiceExtraction;
+    let attempts: number;
+    let usage: { inputTokens: number; outputTokens: number };
+    let model: string;
 
-      if (failure.kind === 'PROVIDER_ERROR' && failure.retriable) {
-        // Hand the decision to the queue: it owns backoff.
-        throw new RetriableProviderError(failure.message);
+    if (cached) {
+      ({ data, attempts, usage, model } = cached);
+    } else {
+      const extraction = await extractWithRepair(this.llm, promptText, invoiceJsonSchema(), {
+        maxAttempts: this.env.MAX_EXTRACTION_ATTEMPTS,
+        onRetry: ({ attempt, issues }) => {
+          // Recorded as an event so a stuck document's history shows the model
+          // was corrected, not merely that it was slow.
+          void this.recordEvent(documentId, 'LLM_RETRY', { attempt, issues });
+        },
+      });
+
+      if (!isOk(extraction)) {
+        const failure = extraction.error;
+
+        if (failure.kind === 'PROVIDER_ERROR' && failure.retriable) {
+          // Hand the decision to the queue: it owns backoff.
+          throw new RetriableProviderError(failure.message);
+        }
+
+        await this.failDocument(
+          documentId,
+          failure.kind === 'SCHEMA_FAILURE'
+            ? `${TERMINAL_CODES.SCHEMA_FAILURE}: ${failure.issues.join('; ')}`
+            : failure.message,
+          { attempts: failure.attempts },
+        );
+        return { status: 'FAILED' };
       }
 
-      await this.failDocument(
-        documentId,
-        failure.kind === 'SCHEMA_FAILURE'
-          ? `${TERMINAL_CODES.SCHEMA_FAILURE}: ${failure.issues.join('; ')}`
-          : failure.message,
-        { attempts: failure.attempts },
-      );
-      return { status: 'FAILED' };
+      ({ data, attempts, usage, model } = extraction.value);
     }
-
-    const { data, attempts, usage, model } = extraction.value;
 
     const findings = validateInvoice(data, systemClock);
     const confidence = assessConfidence(data, {
@@ -163,6 +224,11 @@ export class ExtractDocumentProcessor extends WorkerHost {
       pageCount: pdf.pageCount,
       nextStatus,
       jobId: job.id ?? documentId,
+      // A cache hit is genuinely free: the tokens were paid for once, on the
+      // original document. Charging them again would make cumulative spend a
+      // number that grows without any money leaving the account, which is
+      // exactly the kind of comfortable lie the cost dashboard exists to avoid.
+      cached: cached !== null,
     });
 
     // Enqueued after the transaction commits, never inside it: a job that fires
@@ -182,7 +248,59 @@ export class ExtractDocumentProcessor extends WorkerHost {
       this.logger.warn(`${documentId}: could not enqueue embedding: ${String(error)}`);
     }
 
-    return { status: nextStatus };
+    return { status: nextStatus, cached: cached !== null };
+  }
+
+  /**
+   * Cache lookup, with failure treated as a miss.
+   *
+   * The model is read from configuration rather than from the previous run,
+   * because the question is "have we already asked *this* model *this* question
+   * about *these* bytes?" — and the model we would be about to use is the one
+   * that defines `this model`.
+   */
+  private async lookupCache(
+    contentSha256: string | null,
+    documentId: string,
+  ): Promise<{
+    data: InvoiceExtraction;
+    attempts: number;
+    usage: { inputTokens: number; outputTokens: number };
+    model: string;
+  } | null> {
+    // The hash is written at /complete, so anything reaching this queue has one.
+    // It is nullable in the schema all the same, and a cache keyed on "no hash"
+    // would match every hashless document to every other — the one bug in a
+    // cache that produces confidently wrong data rather than a slow miss.
+    if (!this.env.EXTRACTION_CACHE_ENABLED || !contentSha256) return null;
+
+    let hit;
+    try {
+      // The extractor's own identity, not `env.LLM_MODEL`. Under the fixture
+      // provider those differ permanently, and keying on configuration would
+      // make every lookup a miss — silently, since a cache that never hits is
+      // indistinguishable from one with nothing to reuse.
+      hit = await this.cache.lookup(contentSha256, PROMPT_VERSION, this.llm.modelId);
+    } catch (error) {
+      // A cache that is down must degrade to a slow, correct system rather than
+      // a broken one. Falling through to the model costs money; failing the
+      // document costs the user their upload.
+      this.logger.warn(`${documentId}: cache lookup failed, extracting live: ${String(error)}`);
+      return null;
+    }
+
+    this.metrics.recordCacheLookup(hit !== null);
+
+    if (!hit) return null;
+
+    this.logger.log(`${documentId}: reusing extraction from ${hit.sourceDocumentId} (same bytes)`);
+    void this.recordEvent(documentId, 'EXTRACTION_CACHE_HIT', {
+      sourceDocumentId: hit.sourceDocumentId,
+      model: hit.model,
+      promptVersion: PROMPT_VERSION,
+    });
+
+    return { data: hit.data, attempts: hit.attempts, usage: hit.usage, model: hit.model };
   }
 
   /**
@@ -203,10 +321,13 @@ export class ExtractDocumentProcessor extends WorkerHost {
     pageCount: number;
     nextStatus: 'COMPLETED' | 'NEEDS_REVIEW';
     jobId: string;
+    cached: boolean;
   }): Promise<string> {
-    const costUsd = computeCostUsd(input.usage, input.model);
+    const costUsd = input.cached ? 0 : computeCostUsd(input.usage, input.model);
 
-    return this.prisma.$transaction(async (tx) => {
+    this.metrics.recordSpend(input.model, costUsd, input.attempts);
+
+    const extractionId = await this.prisma.$transaction(async (tx) => {
       const current = await tx.document.findUniqueOrThrow({
         where: { id: input.documentId },
         select: { status: true },
@@ -259,12 +380,17 @@ export class ExtractDocumentProcessor extends WorkerHost {
             flaggedFields: input.confidence.flaggedPaths,
             findingCount: input.findings.length,
             costUsd,
+            cached: input.cached,
           },
         },
       });
 
       return extraction.id;
     });
+
+    await this.announce(input.documentId, input.nextStatus);
+
+    return extractionId;
   }
 
   /** Decides between re-throwing for a retry and failing the document. */
@@ -333,6 +459,8 @@ export class ExtractDocumentProcessor extends WorkerHost {
     });
 
     this.logger.warn(`${documentId} failed: ${trimmed}`);
+
+    await this.announce(documentId, 'FAILED');
   }
 
   private async transition(
@@ -349,6 +477,8 @@ export class ExtractDocumentProcessor extends WorkerHost {
         data: { documentId, type: 'STATUS_CHANGED', payload: { from, to, ...payload } },
       });
     });
+
+    await this.announce(documentId, to);
   }
 
   private async recordEvent(
@@ -383,6 +513,21 @@ export class ExtractDocumentProcessor extends WorkerHost {
  */
 function toJson(value: unknown): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
+
+/**
+ * Maps a pipeline result to the closed set of metric outcome labels.
+ *
+ * Both SKIPPED_* results collapse to `skipped`: for the purpose of "is the
+ * pipeline healthy?", a redelivered job that correctly declined to work twice
+ * is one phenomenon, and splitting it would produce two panels that are always
+ * read together.
+ */
+function outcomeLabel(status: string): ExtractionOutcome {
+  if (status === 'COMPLETED') return 'completed';
+  if (status === 'NEEDS_REVIEW') return 'needs_review';
+  if (status === 'FAILED') return 'failed';
+  return 'skipped';
 }
 
 /** Signals the queue to retry, distinct from a document-level failure. */

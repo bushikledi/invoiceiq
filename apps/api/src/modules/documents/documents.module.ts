@@ -5,6 +5,7 @@ import { API_ENV } from '../../config/config.module.js';
 import { DocumentsController } from './documents.controller.js';
 import { DocumentsService } from './documents.service.js';
 import { StatsService } from './stats.service.js';
+import { DocumentEventsService } from './document-events.service.js';
 import { QUEUE_EXTRACTION } from './queue.constants.js';
 
 @Module({
@@ -33,7 +34,7 @@ import { QUEUE_EXTRACTION } from './queue.constants.js';
     }),
   ],
   controllers: [DocumentsController],
-  providers: [DocumentsService, StatsService],
-  exports: [DocumentsService, StatsService],
+  providers: [DocumentsService, StatsService, DocumentEventsService],
+  exports: [DocumentsService, StatsService, DocumentEventsService],
 })
 export class DocumentsModule {}

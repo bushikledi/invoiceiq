@@ -5,6 +5,7 @@ export * from './shared/errors.js';
 export * from './auth/password-policy.js';
 export * from './auth/refresh-token-policy.js';
 export * from './document/document-status.js';
+export * from './document/recovery.js';
 export * from './extraction/invoice-schema.js';
 export * from './extraction/business-rules.js';
 export * from './extraction/corroboration.js';

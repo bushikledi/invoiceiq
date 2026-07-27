@@ -9,8 +9,12 @@ import { LlmModule } from './ai/llm.module.js';
 import { ExtractDocumentProcessor } from './pipeline/extract-document.processor.js';
 import { EmbedDocumentProcessor } from './pipeline/embed-document.processor.js';
 import { EmbeddingModule } from './embedding/embedding.module.js';
-import { QUEUE_EMBEDDING, QUEUE_EXTRACTION } from './queues.js';
+import { QUEUE_EMBEDDING, QUEUE_EXTRACTION, QUEUE_MAINTENANCE } from './queues.js';
+import { JanitorProcessor } from './pipeline/janitor.processor.js';
+import { DocumentEventsPublisher } from './events/document-events.service.js';
 import { HeartbeatService } from './health/heartbeat.service.js';
+import { MetricsModule } from './observability/pipeline.metrics.js';
+import { MetricsServerService } from './observability/metrics-server.service.js';
 
 @Module({
   imports: [
@@ -75,13 +79,36 @@ import { HeartbeatService } from './health/heartbeat.service.js';
           },
         }),
       },
+      {
+        name: QUEUE_MAINTENANCE,
+        useFactory: () => ({
+          defaultJobOptions: {
+            // One attempt. A janitor run that fails has nothing to unwind and
+            // the next tick is minutes away — retrying with backoff would only
+            // risk two runs overlapping, which is the one thing it must not do.
+            attempts: 1,
+            removeOnComplete: { count: 50 },
+            removeOnFail: { count: 50 },
+          },
+        }),
+      },
     ),
 
     PrismaModule,
     StorageModule,
+    // Before LlmModule: the extractor factory injects PipelineMetrics to report
+    // escalations and spend-cap refusals at the moment they happen.
+    MetricsModule,
     LlmModule,
     EmbeddingModule,
   ],
-  providers: [ExtractDocumentProcessor, EmbedDocumentProcessor, HeartbeatService],
+  providers: [
+    ExtractDocumentProcessor,
+    EmbedDocumentProcessor,
+    JanitorProcessor,
+    DocumentEventsPublisher,
+    HeartbeatService,
+    MetricsServerService,
+  ],
 })
 export class WorkerAppModule {}

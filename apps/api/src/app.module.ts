@@ -1,5 +1,5 @@
 import { Module, type MiddlewareConsumer, type NestModule } from '@nestjs/common';
-import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import type { ApiEnv } from '@invoiceiq/config';
@@ -17,6 +17,7 @@ import { JwtAuthGuard } from './modules/auth/jwt-auth.guard.js';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter.js';
 import { TraceMiddleware } from './common/trace/trace.middleware.js';
 import { buildLoggerConfig } from './logging/logger.config.js';
+import { HttpMetricsInterceptor, MetricsModule } from './modules/metrics/metrics.module.js';
 
 /**
  * Every module that needs configuration resolves it through DI, never at import
@@ -47,6 +48,7 @@ import { buildLoggerConfig } from './logging/logger.config.js';
     StorageModule,
 
     HealthModule,
+    MetricsModule,
     AuthModule,
     DocumentsModule,
     ReviewModule,
@@ -55,6 +57,9 @@ import { buildLoggerConfig } from './logging/logger.config.js';
   ],
   providers: [
     { provide: APP_FILTER, useClass: AllExceptionsFilter },
+    // Outermost interceptor, so the latency it records is what the client
+    // experienced — including time spent in guards and in the exception filter.
+    { provide: APP_INTERCEPTOR, useClass: HttpMetricsInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     // Registered globally so every route is authenticated unless it opts out
     // with @Public(). Protection by default; exposure is the explicit act.

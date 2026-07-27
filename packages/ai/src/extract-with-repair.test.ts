@@ -180,6 +180,7 @@ describe('extractWithRepair', () => {
       // Losing a document to an unrecognised transient error is worse than
       // wasting a couple of attempts on a permanent one.
       const flaky: LlmExtractor = {
+        modelId: 'flaky-model',
         extract: () => Promise.reject(new Error('socket hang up')),
       };
       const result = await extractWithRepair(flaky, TEXT, SCHEMA);

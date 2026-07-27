@@ -33,6 +33,8 @@ const TOOL_NAME = 'record_invoice';
 export class AnthropicLlmExtractor implements LlmExtractor {
   private readonly client: Anthropic;
   private readonly model: string;
+  /** The configured model. The API echoes a resolved alias, which may be more specific. */
+  readonly modelId: string;
   private readonly maxTokens: number;
 
   constructor(options: AnthropicExtractorOptions) {
@@ -44,6 +46,7 @@ export class AnthropicLlmExtractor implements LlmExtractor {
       maxRetries: 0,
     });
     this.model = options.model;
+    this.modelId = options.model;
     this.maxTokens = options.maxTokens ?? 4_096;
   }
 

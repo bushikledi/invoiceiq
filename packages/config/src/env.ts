@@ -52,6 +52,22 @@ export const BaseEnvSchema = z.object({
   EMBEDDING_MODEL: z.string().default('Xenova/paraphrase-multilingual-MiniLM-L12-v2'),
   EMBEDDING_DIM: z.coerce.number().int().positive().default(384),
   OPENAI_API_KEY: z.string().optional(),
+
+  /**
+   * How long a document may sit in PROCESSING before it counts as stranded.
+   *
+   * Shared for the same reason the embedding settings are: the worker's janitor
+   * and the API's requeue endpoint both apply this threshold, and if they
+   * disagreed an operator could requeue a document one second before the
+   * janitor decided it was still healthy — two writers, two enqueues, one
+   * document processed twice.
+   *
+   * Set it comfortably above the slowest legitimate extraction. Below the real
+   * p99 the janitor reclaims documents that were merely slow, which means
+   * paying twice, most often for exactly the large multi-page invoices that are
+   * slowest to begin with.
+   */
+  STRANDED_AFTER_MINUTES: z.coerce.number().int().positive().default(15),
 });
 
 /** API-only configuration. */
@@ -72,6 +88,19 @@ export const ApiEnvSchema = BaseEnvSchema.extend({
   /** Pre-filled on the login screen so the demo takes 90 seconds, not five minutes. */
   DEMO_EMAIL: z.email().optional(),
   DEMO_PASSWORD: z.string().optional(),
+
+  /**
+   * Bearer token required to scrape `/metrics`. Unset means the endpoint does
+   * not exist — 404, not 401.
+   *
+   * Off by default because the alternative is worse. The API is the one process
+   * with a public origin, and a metrics endpoint that ships open publishes
+   * request volumes, error rates, spend and route names to anyone who guesses
+   * the path. Defaulting to absent means exposing it is a decision somebody
+   * made, and 404 rather than 401 means an unconfigured deployment does not
+   * even confirm the endpoint is there.
+   */
+  METRICS_TOKEN: z.string().min(16).optional(),
 });
 
 /** Worker-only configuration. */
@@ -84,10 +113,39 @@ export const WorkerEnvSchema = BaseEnvSchema.extend({
   LLM_PROVIDER: z.enum(['anthropic', 'fixture']).default('fixture'),
   ANTHROPIC_API_KEY: z.string().optional(),
   LLM_MODEL: z.string().default('claude-haiku-4-5-20251001'),
-  /** Escalation tier — used only when the default model fails schema twice (M11). */
+  /** Escalation tier — reached only after the default model fails the schema. */
   LLM_MODEL_FALLBACK: z.string().default('claude-sonnet-5'),
+  /**
+   * Attempts spent on a tier before escalating. With the default 3 attempts
+   * that means two tries on the cheap model and one on the strong one, which is
+   * the shape that pays the premium only where it has evidence it is needed.
+   */
+  LLM_TIER_ATTEMPTS: z.coerce.number().int().positive().default(2),
   MAX_EXTRACTION_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(3),
   MAX_PROMPT_TOKENS: z.coerce.number().int().positive().default(8000),
+
+  /**
+   * Daily ceiling on LLM spend, in USD. Defaults to a real number rather than
+   * to `0`, because a cap that ships disabled is a cap nobody has — and with the
+   * fixture provider costing nothing it never trips in development anyway.
+   */
+  LLM_DAILY_SPEND_CAP_USD: z.coerce.number().min(0).default(5),
+  /**
+   * Reuse a previous extraction of byte-identical content under the same prompt
+   * and model. Only the model output is reused; validation and scoring always
+   * re-run. Switchable so a nightly contract run can force real calls.
+   */
+  EXTRACTION_CACHE_ENABLED: z.stringbool().default(true),
+
+  /**
+   * Prometheus scrape port for the otherwise headless worker. 9464 is the
+   * OpenTelemetry Prometheus exporter convention. Bind it to a private network:
+   * it exposes spend and queue depth, which are nobody else's business. 0
+   * disables the server entirely.
+   */
+  WORKER_METRICS_PORT: z.coerce.number().int().min(0).default(9464),
+
+  JANITOR_INTERVAL_MINUTES: z.coerce.number().int().positive().default(5),
 
   CONFIDENCE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.85),
   EXTRACTION_CONCURRENCY: z.coerce.number().int().positive().default(2),

@@ -2,6 +2,8 @@ export * from './ports/llm-extractor.js';
 export * from './extract-with-repair.js';
 export * from './adapters/fixture-extractor.js';
 export * from './adapters/anthropic-extractor.js';
+export * from './adapters/tiered-extractor.js';
+export * from './adapters/spend-capped-extractor.js';
 export * from './adapters/error-classification.js';
 export * from './ports/embedding-provider.js';
 export * from './adapters/deterministic-embedder.js';

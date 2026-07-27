@@ -21,6 +21,7 @@
     "@invoiceiq/contracts": "workspace:*",
     "@invoiceiq/database": "workspace:*",
     "@invoiceiq/domain": "workspace:*",
+    "@invoiceiq/observability": "workspace:*",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.1.28",
     "@nestjs/core": "^11.1.28",

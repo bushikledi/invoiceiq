@@ -49,6 +49,13 @@ export class FixtureLlmExtractor implements LlmExtractor {
   /** Every request seen, so tests can assert on call count and feedback content. */
   readonly calls: ExtractionRequest[] = [];
 
+  /**
+   * Fixtures answer as `fixture-model`, and the extraction cache keys on it.
+   * A scenario that overrides `model` records that instead, so a hit requires
+   * the same scenario — which is the honest comparison.
+   */
+  readonly modelId = DEFAULT_MODEL;
+
   constructor(
     private readonly library: FixtureLibrary,
     /** Used whenever the resolver finds no match. */

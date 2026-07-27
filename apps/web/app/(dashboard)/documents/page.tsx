@@ -102,9 +102,7 @@ export default function DocumentsPage() {
         />
       )}
 
-      {query.isSuccess && query.data.items.length > 0 && (
-        <DocumentList items={query.data.items} />
-      )}
+      {query.isSuccess && query.data.items.length > 0 && <DocumentList items={query.data.items} />}
     </div>
   );
 }
@@ -127,9 +125,7 @@ function DocumentList({ items }: { items: DocumentSummary[] }) {
     <>
       <div className="hidden overflow-hidden rounded-xl border border-line bg-surface md:block">
         <table className="w-full text-sm">
-          <caption className="sr-only">
-            Uploaded documents with their processing status
-          </caption>
+          <caption className="sr-only">Uploaded documents with their processing status</caption>
           <thead>
             <tr className="border-b border-line text-left text-xs uppercase tracking-wide text-ink-muted">
               <th scope="col" className="px-4 py-3 font-medium">
@@ -151,7 +147,11 @@ function DocumentList({ items }: { items: DocumentSummary[] }) {
           </thead>
           <tbody className="divide-y divide-line">
             {items.map((document) => (
-              <tr key={document.id} className="transition hover:bg-surface-muted" data-testid="document-row">
+              <tr
+                key={document.id}
+                className="transition hover:bg-surface-muted"
+                data-testid="document-row"
+              >
                 <td className="max-w-xs px-4 py-3">
                   <p className="truncate font-medium text-ink">{document.originalName}</p>
                   {document.failureReason && (

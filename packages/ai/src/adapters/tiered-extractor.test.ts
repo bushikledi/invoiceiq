@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { TieredLlmExtractor, type ExtractorTier } from './tiered-extractor.js';
-import type { ExtractionRequest, ExtractionResponse, LlmExtractor } from '../ports/llm-extractor.js';
+import type {
+  ExtractionRequest,
+  ExtractionResponse,
+  LlmExtractor,
+} from '../ports/llm-extractor.js';
 
 /** Records which requests it saw and answers with its own name. */
 class SpyExtractor implements LlmExtractor {

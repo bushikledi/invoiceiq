@@ -8,7 +8,7 @@ component safe to build on, deciding when a human is needed, and proving it all
 works without spending money on every test run.
 
 ```
-Next.js 15 ──HTTPS──▶ NestJS API ──enqueue──▶ Redis / BullMQ ──▶ NestJS Worker
+Next.js 16 ──HTTPS──▶ NestJS API ──enqueue──▶ Redis / BullMQ ──▶ NestJS Worker
                           │                                          │
                           ├── presigned PUT ──▶ S3 / MinIO ◀─────────┤
                           └── SQL ──▶ PostgreSQL 16 + pgvector ◀─────┘
@@ -83,13 +83,44 @@ Separately, six business rules recompute the arithmetic. Schema validity is not
 correctness — a perfectly-shaped invoice whose lines sum to €1,240 against a
 stated €1,250 is caught here, deterministically, at zero token cost.
 
+### Not paying twice for the same answer
+
+Three controls, each aimed at a different way spend runs away:
+
+| Control                                                   | Stops                                                   |
+| --------------------------------------------------------- | ------------------------------------------------------- |
+| **Extraction cache** on `(sha256, prompt version, model)` | Paying again for bytes already extracted                |
+| **Model tiering**, escalating on a schema failure         | Paying Sonnet prices for invoices Haiku reads correctly |
+| **Daily cap**, read from the database                     | A retry loop billing all night                          |
+
+Escalation triggers on a _schema_ failure, never on low confidence. A stronger
+model can plausibly fix malformed output; it will just as confidently agree with
+a doubtful number, so paying twice to learn nothing is the wrong move — that
+case belongs to a human, which is what the review queue is for.
+
+The cache stores only the **model output**. Validation, confidence and chunking
+re-run from scratch on a hit, because they are pure, free, and the parts most
+likely to have changed since the row was written. Caching the verdict would mean
+a tightened business rule silently did not apply to duplicate uploads.
+
+### When a worker dies
+
+Graceful shutdown drains in-flight jobs, so the ordinary case is covered. For
+SIGKILL and OOM there is a janitor: a **BullMQ repeatable job**, not an
+in-process cron, because Redis elects one runner where `@nestjs/schedule` would
+race N replicas against the same rows.
+
+Reclaiming is safe in both directions regardless — the processor refuses any
+document that is not `QUEUED`, so a job arriving for work someone else picked up
+acknowledges itself and does nothing.
+
 ### Testing a non-deterministic system
 
 ```
 Playwright smoke              ← against the composed stack
-Integration (Testcontainers)  ← real Postgres, Redis, MinIO; fixture LLM
+Integration (Testcontainers)  ← 124 tests: real Postgres, Redis, MinIO
 Contract tests (nightly)      ← real API, off the PR path
-Unit (domain + ai)            ← 420 tests, milliseconds, no I/O
+Unit (domain + ai + worker)   ← 450 tests, milliseconds, no I/O
 ```
 
 Every PR runs the **real worker** — real queue, real transactions, real
@@ -115,7 +146,9 @@ own PDF, which made the review screen show amber warnings on correct fields.
 | Keyset pagination                  | A document completing between page 1 and 2 would make offset pagination skip or repeat rows.                                                                                              |
 | Refresh rotation + reuse detection | Replaying a rotated token proves two parties hold a single-use secret, so the whole family is revoked. Reuse is checked _before_ expiry — otherwise an attacker just waits out the clock. |
 
-Full rationale in [`docs/adr/`](docs/adr/).
+Full rationale in [`docs/adr/`](docs/adr/) — thirteen of them, each with a
+"what this cost us" section, because a decision record that lists only benefits
+is advertising.
 
 ### Prompt injection
 
@@ -144,9 +177,11 @@ scoping decision rather than an oversight.
 - **Single tenant.** _Seam:_ add `tenant_id` to documents and enable RLS. Every
   query already goes through a repository scoped by uploader, so the change is
   bounded.
-- **Polling, not push.** The dashboard polls only while work is in flight.
-  _Seam:_ TanStack Query owns the cache, so SSE replaces the transport without
-  touching a component.
+- **Live updates are best-effort.** Status changes arrive over SSE, but Redis
+  pub/sub has no delivery guarantee — an event published while a browser was
+  disconnected is simply gone. The database stays the source of truth and the
+  dashboard keeps a slow poll as the fallback, which is why the header says
+  "Live" or "Reconnecting" rather than pretending there is no difference.
 - **Prisma cannot express pgvector.** The embedding column is `Unsupported`, so
   inserts and search are raw SQL confined to two files. A generated migration
   will silently `DROP` the HNSW index — `schema-integrity.integration.test.ts`
@@ -170,9 +205,36 @@ pnpm test:integration   # Testcontainers: real Postgres, Redis, MinIO
 pnpm boundaries:verify  # architecture rules — and a test that they can fail
 ```
 
+```bash
+k6 run infra/load/upload-burst.js   # 50 concurrent uploads
+```
+
 `boundaries:verify` injects a deliberate `packages/domain → @nestjs/common`
 import and asserts the check rejects it. A boundary config that passes proves
 nothing unless you also prove it can fail.
+
+### Load
+
+The load script answers one question: when fifty people upload at once, does
+queue pressure reach the request path? Measured on a laptop against the local
+stack, with the per-IP limiter raised for the run:
+
+|                                  |                            |
+| -------------------------------- | -------------------------- |
+| Uploads accepted                 | 50 / 50, zero errors       |
+| Dashboard reads during the burst | 300 / 300, **p95 10.8 ms** |
+| Failed requests                  | 0 of 451                   |
+
+The reads are the assertion; the uploads are only the load that makes it
+meaningful. It is deliberately not a throughput benchmark — throughput here is
+set by `EXTRACTION_RATE_LIMIT_PER_MINUTE` and the provider, both configuration,
+so measuring it would produce an impressive number that means nothing.
+
+Raising the limiter first is not cheating, it is the point: throttling is
+per-IP and every virtual user shares one address, so at the shipped default the
+run measures the throttler rather than the system behind it. The script says so
+in its header, because the first version of it did exactly that and reported 88%
+"failure" that was entirely the limiter working as designed.
 
 ### Refreshing the LLM fixtures
 
@@ -216,3 +278,34 @@ Manages the API and worker with pid files. It exists because doing it by hand
 went wrong: `pkill -f "worker/dist/main.js"` never matches a process running
 `node dist/main.js`, and seven stale workers consuming one queue produced
 results that looked exactly like a subtle concurrency bug in the pipeline.
+
+### Observability
+
+The worker exposes `/metrics` on a private port (9464 by default). The API's is
+behind a bearer token and **404s when that token is unset** — it is the process
+with a public origin, and a metrics endpoint that ships open publishes request
+volumes, error rates and spend to anyone who guesses the path.
+
+[`infra/observability/`](infra/observability/) has a Grafana dashboard and four
+alert rules. The dashboard is ordered by the questions an incident actually
+raises, in order: is work moving, is it correct, is it slow, what is it costing.
+
+Metric names live in `packages/observability` rather than in each app, for the
+same reason the embedding settings are shared: if the worker exported
+`extraction_total` and the API exported `extractions_total`, every dashboard
+would still render, showing half the truth, with nothing anywhere reporting an
+error.
+
+### Security
+
+[`docs/security-review.md`](docs/security-review.md) is a pass over the OWASP API
+Top 10 plus the two risks specific to putting a model in the pipeline. It is
+written to be checkable: each item names the file the control lives in, and the
+gaps — no MFA, `'unsafe-inline'` in the CSP, no row-level security — are listed
+as gaps rather than as future work.
+
+CI gates on `gitleaks` over the **full history** (a secret "removed" in a later
+commit is still in the pack file) and `pnpm audit --audit-level high`. The audit
+passed on its first run because the seven advisories it found were fixed by
+pinning in `pnpm.overrides`, not added to an ignore list — which would have made
+the gate decorative on day one.

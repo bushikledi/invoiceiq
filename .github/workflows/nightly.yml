@@ -1,0 +1,107 @@
+name: Nightly contract
+
+on:
+  schedule:
+    # 03:00 UTC. Late enough that a failure is waiting in the morning rather
+    # than interrupting the day, early enough that it is not competing with
+    # everyone else's midnight cron for runners.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-contract
+  cancel-in-progress: false
+
+jobs:
+  contract:
+    name: Live provider contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Skipped rather than failed on a fork or before a key exists: a red X on
+    # somebody's fork for not having our API key is noise they cannot act on.
+    if: ${{ github.repository_owner != '' }}
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @invoiceiq/domain build
+
+      - name: Contract tests against the live API
+        id: contract
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::notice::ANTHROPIC_API_KEY is not set — the suite self-skips."
+          fi
+          pnpm --filter @invoiceiq/ai test:contract 2>&1 | tee contract.log
+
+      # Only on a real failure, and only one issue at a time. A nightly job that
+      # opens a fresh issue every night turns a single provider change into
+      # thirty duplicate tickets, which is how the alert stops being read.
+      - name: Open an issue on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const title = 'Nightly contract test failed against the live provider';
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'contract-failure',
+            });
+
+            const log = fs.existsSync('contract.log')
+              ? fs.readFileSync('contract.log', 'utf8').slice(-6000)
+              : '(no log captured)';
+
+            const body = [
+              'The fixture suite is still green, which means **this is a provider change, not a code change**.',
+              '',
+              `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              '',
+              'If the provider changed behaviour, re-record the fixtures and review the diff carefully —',
+              'every downstream test believes those values:',
+              '',
+              '```bash',
+              'ANTHROPIC_API_KEY=sk-ant-... pnpm --filter @invoiceiq/ai record:fixtures',
+              '```',
+              '',
+              '<details><summary>Output</summary>',
+              '',
+              '```',
+              log,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+
+            if (existing.data.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.data[0].number,
+                body: `Failed again on ${new Date().toISOString().slice(0, 10)}.\n\n${body}`,
+              });
+              return;
+            }
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              labels: ['contract-failure'],
+              body,
+            });

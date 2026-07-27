@@ -62,7 +62,31 @@ ANTHROPIC_API_KEY  sk-ant-…
 **web**:
 
 ```
-NEXT_PUBLIC_API_URL  https://your-api-domain
+NEXT_PUBLIC_API_URL        https://your-api-domain
+NEXT_PUBLIC_STORAGE_ORIGIN https://your-bucket.s3.eu-south-1.amazonaws.com
+```
+
+`NEXT_PUBLIC_STORAGE_ORIGIN` is baked into the Content-Security-Policy at build
+time. Get it wrong and the PDF pane silently renders nothing — the CSP blocks
+the `<object>` and there is no network error to find, only a `connect-src`
+violation in the browser console.
+
+**Observability** — both processes:
+
+```
+WORKER_METRICS_PORT  9464        # private network only; publishes spend and queue depth
+METRICS_TOKEN        <openssl rand -hex 32>
+```
+
+Leave `METRICS_TOKEN` unset and the API's `/metrics` returns 404. That is the
+intended default: it is the process with a public origin.
+
+**Rate limits**, if the deployment sits behind a shared NAT or corporate proxy —
+throttling is per IP, so every user of one office arrives as one address:
+
+```
+RATE_LIMIT_GLOBAL_PER_MINUTE  100
+RATE_LIMIT_AUTH_PER_MINUTE    10
 ```
 
 > `JWT_SECRET` must be generated, not copied from `.env.example`. That file
@@ -110,10 +134,28 @@ Migrations are **not** rolled back automatically. Every migration so far is
 additive, so an older image runs against a newer schema safely. A destructive
 migration would need a paired down-migration written deliberately.
 
-**A document is stuck in PROCESSING.** A worker died mid-job. The timeline on
-the review screen shows where it stopped. Until the M11 janitor lands, requeue
-by setting the status back to `QUEUED`; the processor's status guard makes that
-safe.
+**A document is stuck in PROCESSING.** A worker died mid-job. The janitor
+reclaims it within `STRANDED_AFTER_MINUTES` (15 by default) — check
+`invoiceiq_stranded_documents` or the `RECLAIMED` events on the timeline. To
+push it through immediately, use the **Requeue** button on the failure screen,
+or:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  https://your-api-domain/api/v1/documents/<id>/requeue
+```
+
+A 409 means it is not eligible yet; the message says how long it has been
+waiting and what the window is.
+
+**Extractions are being refused with `SPEND_CAP_EXCEEDED`.** The daily budget is
+gone. Look for a retry loop _before_ raising `LLM_DAILY_SPEND_CAP_USD` — the cap
+is doing its job. Once raised, requeue the affected documents:
+
+```sql
+SELECT id, original_name FROM documents
+WHERE status = 'FAILED' AND failure_reason LIKE 'SPEND_CAP_EXCEEDED%';
+```
 
 **Extraction is failing across the board.** Check `LLM_PROVIDER` and the key
 first. `failure_reason` carries a machine-readable prefix —

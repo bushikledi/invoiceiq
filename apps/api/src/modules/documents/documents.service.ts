@@ -194,7 +194,11 @@ export class DocumentsService {
    * that may still be in flight, and distinguishes "never" from "not yet" so
    * the client can say something useful.
    */
-  async requeue(userId: string, documentId: string, strandedAfterMinutes: number): Promise<DocumentSummary> {
+  async requeue(
+    userId: string,
+    documentId: string,
+    strandedAfterMinutes: number,
+  ): Promise<DocumentSummary> {
     const now = systemClock.now();
 
     const document = await this.prisma.document.findFirst({

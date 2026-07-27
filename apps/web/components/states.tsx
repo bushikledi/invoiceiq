@@ -49,10 +49,7 @@ export function ErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div
-      className="rounded-xl border border-critical-line bg-critical-soft px-4 py-3"
-      role="alert"
-    >
+    <div className="rounded-xl border border-critical-line bg-critical-soft px-4 py-3" role="alert">
       <p className="text-sm font-medium text-critical-ink">{title}</p>
       <p className="mt-1 text-sm text-critical-ink/90">{message}</p>
 

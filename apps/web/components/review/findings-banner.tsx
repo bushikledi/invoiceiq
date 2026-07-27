@@ -24,10 +24,7 @@ export function FindingsBanner({ findings }: { findings: ValidationFinding[] }) 
   return (
     <div className="space-y-2" data-testid="findings-banner">
       {errors.length > 0 && (
-        <div
-          className="rounded-xl border border-critical-line bg-critical-soft p-4"
-          role="alert"
-        >
+        <div className="rounded-xl border border-critical-line bg-critical-soft p-4" role="alert">
           <p className="text-sm font-medium text-critical-ink">
             {errors.length === 1
               ? 'This invoice does not add up'

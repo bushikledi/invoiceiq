@@ -1,4 +1,8 @@
-import type { ExtractionRequest, ExtractionResponse, LlmExtractor } from '../ports/llm-extractor.js';
+import type {
+  ExtractionRequest,
+  ExtractionResponse,
+  LlmExtractor,
+} from '../ports/llm-extractor.js';
 
 /**
  * Model tiering: start cheap, escalate only when cheap demonstrably fails.

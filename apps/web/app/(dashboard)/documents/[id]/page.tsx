@@ -60,9 +60,7 @@ export default function ReviewPage() {
       setEdits({});
       setSubmitError(null);
       notify(
-        variables.action === 'CORRECTED'
-          ? 'Corrections saved and approved.'
-          : 'Approved.',
+        variables.action === 'CORRECTED' ? 'Corrections saved and approved.' : 'Approved.',
         'success',
       );
       await queryClient.invalidateQueries({ queryKey: ['document', id] });

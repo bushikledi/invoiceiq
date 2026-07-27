@@ -51,21 +51,15 @@
         "overrides": [
           {
             "matcher": { "id": "byName", "options": "failed" },
-            "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
-            ]
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }]
           },
           {
             "matcher": { "id": "byName", "options": "completed" },
-            "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
-            ]
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }]
           },
           {
             "matcher": { "id": "byName", "options": "needs_review" },
-            "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }
-            ]
+            "properties": [{ "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }]
           }
         ]
       }

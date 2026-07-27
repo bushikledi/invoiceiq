@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SPEND_CAP_CODE, SpendCappedExtractor } from './spend-capped-extractor.js';
 import { isLlmError } from '../ports/llm-extractor.js';
-import type { ExtractionRequest, ExtractionResponse, LlmExtractor } from '../ports/llm-extractor.js';
+import type {
+  ExtractionRequest,
+  ExtractionResponse,
+  LlmExtractor,
+} from '../ports/llm-extractor.js';
 
 const inner: LlmExtractor = {
   modelId: 'haiku',

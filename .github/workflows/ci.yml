@@ -74,6 +74,48 @@ jobs:
       # below the bar fails the build rather than printing in red.
       - run: pnpm test:coverage
 
+  security:
+    name: Secrets and dependencies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks needs history, not just the tip. A secret committed three
+          # commits ago and "removed" in the fourth is still in the pack file
+          # and still valid — scanning only the working tree would report clean
+          # on exactly the case that matters.
+          fetch-depth: 0
+
+      - name: Scan for committed secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # High and critical only, and it fails the build.
+      #
+      # Auditing at `moderate` on a Node monorepo means a permanently red
+      # pipeline over advisories nobody is going to act on — and a gate that is
+      # always red is a gate everyone learns to merge past. A narrow gate that
+      # is believed beats a broad one that is ignored.
+      #
+      # This passed on the first run only because the seven advisories it found
+      # were fixed rather than excused: the offending transitive versions are
+      # pinned in `pnpm.overrides` in the root package.json. Adding an
+      # ignore-list would have been faster and would have made the gate
+      # decorative on day one.
+      - name: Audit dependencies
+        run: pnpm audit --audit-level high
+
   integration:
     name: Integration tests
     runs-on: ubuntu-latest

@@ -105,14 +105,19 @@ export function useDocumentStream(enabled = true): DocumentStream {
       if (stopped) return;
 
       try {
-        await streamRequest('/documents/stream', controller.signal, (raw) => {
-          const parsed = DocumentStreamEventSchema.safeParse(raw);
-          if (parsed.success) handle(parsed.data);
-        }, () => {
-          // Fired on the first byte: the connection is real, so reset backoff.
-          attemptRef.current = 0;
-          setConnected(true);
-        });
+        await streamRequest(
+          '/documents/stream',
+          controller.signal,
+          (raw) => {
+            const parsed = DocumentStreamEventSchema.safeParse(raw);
+            if (parsed.success) handle(parsed.data);
+          },
+          () => {
+            // Fired on the first byte: the connection is real, so reset backoff.
+            attemptRef.current = 0;
+            setConnected(true);
+          },
+        );
       } catch {
         /* Fall through to the reconnect below. */
       }

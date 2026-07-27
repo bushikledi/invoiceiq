@@ -38,10 +38,19 @@ import { HttpMetricsInterceptor, MetricsModule } from './modules/metrics/metrics
     // Two named buckets: a blunt global ceiling, and a much tighter one the
     // auth controller opts into via @Throttle({ auth: ... }) — login and
     // refresh are the routes actually worth brute-forcing.
-    ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 100 },
-      { name: 'auth', ttl: 60_000, limit: 10 },
-    ]),
+    //
+    // Both limits come from configuration, because the correct value depends on
+    // the deployment: behind a shared NAT every user of an office arrives as one
+    // IP. It is also what lets the load script raise the ceiling for a run — a
+    // single-IP load generator otherwise measures the throttler rather than the
+    // system behind it.
+    ThrottlerModule.forRootAsync({
+      inject: [API_ENV],
+      useFactory: (env: ApiEnv) => [
+        { name: 'global', ttl: 60_000, limit: env.RATE_LIMIT_GLOBAL_PER_MINUTE },
+        { name: 'auth', ttl: 60_000, limit: env.RATE_LIMIT_AUTH_PER_MINUTE },
+      ],
+    }),
 
     PrismaModule,
     RedisModule,

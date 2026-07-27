@@ -1,4 +1,10 @@
-import { Inject, Injectable, Logger, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  type OnApplicationShutdown,
+  type OnModuleInit,
+} from '@nestjs/common';
 import { createServer, type Server, type ServerResponse } from 'node:http';
 import type { WorkerEnv } from '@invoiceiq/config';
 import { WORKER_ENV } from '../config/config.module.js';

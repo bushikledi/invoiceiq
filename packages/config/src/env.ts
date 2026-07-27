@@ -101,6 +101,22 @@ export const ApiEnvSchema = BaseEnvSchema.extend({
    * even confirm the endpoint is there.
    */
   METRICS_TOKEN: z.string().min(16).optional(),
+
+  /**
+   * Per-IP request ceilings.
+   *
+   * Configurable rather than hard-coded because the right number depends
+   * entirely on the deployment. Behind a shared NAT or a corporate proxy every
+   * user of a customer arrives as one IP, and a limit tuned for individuals
+   * throttles the whole office; a single-tenant install can be far stricter
+   * than a public one.
+   *
+   * The auth bucket is deliberately far tighter: login and refresh are the
+   * routes worth brute-forcing, and nobody legitimately signs in ten times a
+   * minute.
+   */
+  RATE_LIMIT_GLOBAL_PER_MINUTE: z.coerce.number().int().positive().default(100),
+  RATE_LIMIT_AUTH_PER_MINUTE: z.coerce.number().int().positive().default(10),
 });
 
 /** Worker-only configuration. */

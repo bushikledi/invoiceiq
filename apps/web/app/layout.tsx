@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import type { ReactNode } from 'react';
 import { QueryProvider } from '../lib/query-provider';
 import { SessionProvider } from '../lib/session';
@@ -23,13 +24,23 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        {/* Runs before first paint so a dark-mode user never sees a white
-            flash. suppressHydrationWarning above is required because this
-            script deliberately mutates <html> before React attaches. */}
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
-      </head>
       <body className="min-h-screen bg-canvas text-ink">
+        {/*
+          Runs before first paint so a dark-mode user never sees a white flash.
+
+          `next/script` with `beforeInteractive` rather than a bare <script> in
+          <head>: React 19 warns that scripts rendered inside a component are
+          not executed on client render, which is true and, here, harmless —
+          but a warning on every page load is how a console becomes something
+          nobody reads. This is the sanctioned mechanism and it is silent.
+
+          suppressHydrationWarning on <html> is required regardless, because
+          this script deliberately mutates the element before React attaches.
+        */}
+        <Script id="theme" strategy="beforeInteractive">
+          {themeScript}
+        </Script>
+
         {/* First focusable element on the page. A reviewer working by keyboard
             would otherwise tab through the whole header on every navigation to
             reach the content they came for. */}

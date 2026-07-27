@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  RECLAIMABLE_STATUSES,
-  canRequeue,
-  isStranded,
-  reclaimAfterMinutes,
-} from './recovery.js';
+import { RECLAIMABLE_STATUSES, canRequeue, isStranded, reclaimAfterMinutes } from './recovery.js';
 import { DOCUMENT_STATUSES, type DocumentStatus } from './document-status.js';
 
 const NOW = new Date('2026-07-27T12:00:00Z');

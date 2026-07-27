@@ -120,7 +120,10 @@ export class DocumentsController {
       .pipe(map((event): MessageEvent => ({ type: 'status', data: event })));
 
     const heartbeat = interval(20_000).pipe(
-      map((): MessageEvent => ({ type: 'heartbeat', data: { at: systemClock.now().toISOString() } })),
+      map((): MessageEvent => ({
+        type: 'heartbeat',
+        data: { at: systemClock.now().toISOString() },
+      })),
     );
 
     return merge(updates, heartbeat);

@@ -133,9 +133,7 @@ export function UploadDropzone() {
             : 'border-line-strong bg-surface hover:border-focus'
         }`}
       >
-        <p className="text-sm font-medium text-ink">
-          Drop invoice PDFs here, or click to choose
-        </p>
+        <p className="text-sm font-medium text-ink">Drop invoice PDFs here, or click to choose</p>
         <p className="mt-1 text-xs text-ink-muted">PDF only · up to 10 MB</p>
 
         <input

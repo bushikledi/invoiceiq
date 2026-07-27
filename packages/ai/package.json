@@ -22,7 +22,8 @@
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
     "generate:samples": "tsx scripts/generate-samples.ts",
-    "record:fixtures": "tsx scripts/record-fixtures.ts"
+    "record:fixtures": "tsx scripts/record-fixtures.ts",
+    "test:contract": "vitest run --config vitest.contract.config.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

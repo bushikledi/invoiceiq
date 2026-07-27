@@ -1,0 +1,250 @@
+{
+  "__comment": [
+    "Import via Grafana -> Dashboards -> Import -> Upload JSON, then pick your",
+    "Prometheus datasource.",
+    "",
+    "Ordered to answer questions in the order they get asked during an incident:",
+    "is work moving, is it correct, is it slow, what is it costing. The cost row",
+    "is last not because it matters least but because it is the only one nobody",
+    "checks at 3am -- it is the row you look at on a Tuesday to decide whether",
+    "the extraction cache and model tiering are earning their complexity."
+  ],
+  "title": "InvoiceIQ — pipeline",
+  "uid": "invoiceiq-pipeline",
+  "schemaVersion": 39,
+  "editable": true,
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Is work moving?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Extraction outcomes",
+      "description": "needs_review is a success, not a failure — it means the confidence policy correctly asked for a human. Only the failed series is a fault.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(invoiceiq_extraction_total[5m]))",
+          "legendFormat": "{{outcome}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 12, "stacking": { "mode": "normal" } }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "failed" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "red" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "completed" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "green" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "needs_review" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "yellow" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Queue depth",
+      "description": "Distinguishes 'idle because there is no work' from 'idle because the workers are wedged' — identical on a throughput graph, opposite responses.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "targets": [
+        {
+          "expr": "invoiceiq_queue_depth",
+          "legendFormat": "{{queue}} / {{state}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+    {
+      "type": "row",
+      "title": "Is it correct?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 }
+    },
+    {
+      "type": "stat",
+      "title": "Auto-approved share",
+      "description": "The headline number for whether the pipeline saves human effort. A sustained fall means extraction quality dropped or the confidence threshold is now too strict for the documents arriving.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "expr": "sum(rate(invoiceiq_extraction_total{outcome=\"completed\"}[1h])) / clamp_min(sum(rate(invoiceiq_extraction_total{outcome=~\"completed|needs_review\"}[1h])), 0.001)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.3 },
+              { "color": "green", "value": 0.5 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Failure rate (15m)",
+      "description": "Paired with the ExtractionFailureRateHigh alert. Excludes needs_review deliberately.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 10 },
+      "targets": [
+        {
+          "expr": "sum(rate(invoiceiq_extraction_total{outcome=\"failed\"}[15m])) / clamp_min(sum(rate(invoiceiq_extraction_total[15m])), 0.001)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM calls per extraction",
+      "description": "Above 1 means the repair loop ran. A rising p90 is the earliest signal that a prompt or model change has made output less well-formed — visible here well before it shows up as a failure.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(invoiceiq_llm_attempts_bucket[10m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.9, sum by (le) (rate(invoiceiq_llm_attempts_bucket[10m])))",
+          "legendFormat": "p90"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short", "min": 0 } }
+    },
+    {
+      "type": "row",
+      "title": "Is it slow?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Extraction duration",
+      "description": "p99 sets the janitor's stranded threshold: below the real p99 and the janitor reclaims documents that were merely slow, paying for them twice.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 17 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(invoiceiq_extraction_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(invoiceiq_extraction_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(invoiceiq_extraction_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "API latency by route",
+      "description": "Route patterns, never resolved paths — a uuid in a label is one time series per document.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 17 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(invoiceiq_http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "row",
+      "title": "What is it costing?",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 }
+    },
+    {
+      "type": "timeseries",
+      "title": "Spend by model",
+      "description": "Split by model so tiering is measurable: if the escalation tier dominates spend, the cheap tier is not doing its job and the ladder is costing money rather than saving it.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 8, "x": 0, "y": 25 },
+      "targets": [
+        {
+          "expr": "sum by (model) (increase(invoiceiq_llm_cost_usd_total[1h]))",
+          "legendFormat": "{{model}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "type": "stat",
+      "title": "Cache hit rate",
+      "description": "How much spend the extraction cache is actually avoiding. A rate near zero means the cache is complexity with no payoff — which is the honest signal to remove it.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 8, "x": 8, "y": 25 },
+      "targets": [
+        {
+          "expr": "sum(rate(invoiceiq_extraction_cache_total{result=\"hit\"}[1h])) / clamp_min(sum(rate(invoiceiq_extraction_cache_total[1h])), 0.001)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Model escalations",
+      "description": "Each point is a document the cheap model could not produce valid output for. A sustained rise says the cheap tier is mis-chosen for the documents actually arriving.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 8, "x": 16, "y": 25 },
+      "targets": [
+        {
+          "expr": "sum by (from, to) (increase(invoiceiq_model_escalation_total[1h]))",
+          "legendFormat": "{{from}} → {{to}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}

@@ -61,17 +61,17 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-semibold tracking-tight">InvoiceIQ</h1>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-ink-muted">
             Extraction, validation and review for PDF invoices
           </p>
         </div>
 
         <form
           onSubmit={onSubmit}
-          className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
+          className="space-y-4 rounded-xl border border-line bg-surface p-6 shadow-sm"
         >
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="email" className="block text-sm font-medium text-ink">
               Email
             </label>
             <input
@@ -82,12 +82,12 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 text-sm"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700">
+            <label htmlFor="password" className="block text-sm font-medium text-ink">
               Password
             </label>
             <input
@@ -98,12 +98,12 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+              className="mt-1 w-full rounded-md border border-line-strong px-3 py-2 text-sm"
             />
           </div>
 
           {error && (
-            <p role="alert" className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            <p role="alert" className="rounded-md bg-critical-soft px-3 py-2 text-sm text-critical-ink">
               {error}
             </p>
           )}
@@ -111,14 +111,14 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-md bg-slate-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+            className="w-full rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-ink transition hover:bg-accent-hover disabled:opacity-60"
           >
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
         {process.env['NEXT_PUBLIC_DEMO_EMAIL'] && (
-          <p className="mt-4 text-center text-xs text-slate-400">
+          <p className="mt-4 text-center text-xs text-ink-subtle">
             Demo credentials are pre-filled.
           </p>
         )}

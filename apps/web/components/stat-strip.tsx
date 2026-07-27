@@ -24,8 +24,12 @@ export function StatStrip() {
      * A fixed interval here would double the request rate of an idle dashboard
      * for numbers that cannot change, and stacked on top of the table's polling
      * it was enough to trip the global rate limit during testing.
+     *
+     * Since M11 the SSE stream invalidates this query directly, so the interval
+     * is a fallback for a dropped connection rather than the primary path —
+     * which is why it is slower than it used to be.
      */
-    refetchInterval: (query) => ((query.state.data?.processing ?? 0) > 0 ? 3_000 : false),
+    refetchInterval: (query) => ((query.state.data?.processing ?? 0) > 0 ? 5_000 : false),
   });
 
   if (!stats.data || stats.data.total === 0) return null;
@@ -34,7 +38,7 @@ export function StatStrip() {
 
   return (
     <dl
-      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-4"
+      className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-4"
       data-testid="stat-strip"
     >
       <Stat label="Documents" value={String(total)} detail={`${failed} failed`} />
@@ -59,10 +63,10 @@ export function StatStrip() {
 
 function Stat({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="bg-white px-4 py-3">
-      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</dt>
-      <dd className="mt-1 text-xl font-semibold tabular-nums text-slate-900">{value}</dd>
-      <dd className="text-xs text-slate-400">{detail}</dd>
+    <div className="bg-surface px-4 py-3">
+      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
+      <dd className="mt-1 text-xl font-semibold tabular-nums text-ink">{value}</dd>
+      <dd className="text-xs text-ink-subtle">{detail}</dd>
     </div>
   );
 }

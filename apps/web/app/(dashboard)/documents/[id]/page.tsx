@@ -8,8 +8,10 @@ import type {
   Correction,
   DocumentDetail,
   DocumentFileResponse,
+  DocumentSummary,
   ReviewResponse,
 } from '@invoiceiq/contracts';
+import { useToast } from '../../../../lib/toast';
 import { ApiError, api } from '../../../../lib/api-client';
 import { formatCost, formatDate, formatDateTime, formatMoney } from '../../../../lib/format';
 import { StatusBadge, isInFlight } from '../../../../components/status-badge';
@@ -20,6 +22,7 @@ import { EditableField } from '../../../../components/review/editable-field';
 export default function ReviewPage() {
   const { id } = useParams<{ id: string }>();
   const queryClient = useQueryClient();
+  const { notify } = useToast();
 
   /** Pending edits, keyed by path. Empty means nothing has been changed. */
   const [edits, setEdits] = useState<Record<string, unknown>>({});
@@ -53,17 +56,41 @@ export default function ReviewPage() {
   const submit = useMutation({
     mutationFn: (body: { action: 'APPROVED' | 'CORRECTED'; corrections?: Correction[] }) =>
       api.post<ReviewResponse>(`/documents/${id}/review`, body),
-    onSuccess: async () => {
+    onSuccess: async (_result, variables) => {
       setEdits({});
       setSubmitError(null);
+      notify(
+        variables.action === 'CORRECTED'
+          ? 'Corrections saved and approved.'
+          : 'Approved.',
+        'success',
+      );
       await queryClient.invalidateQueries({ queryKey: ['document', id] });
       await queryClient.invalidateQueries({ queryKey: ['documents'] });
+      await queryClient.invalidateQueries({ queryKey: ['document-stats'] });
     },
     onError: (error) => {
       // The server is the authority: if it says the corrected data still fails,
       // the edits stay on screen so the reviewer can fix them rather than
       // losing their work to a rejected save.
       setSubmitError(error instanceof ApiError ? error : null);
+    },
+  });
+
+  const requeue = useMutation({
+    mutationFn: () => api.post<DocumentSummary>(`/documents/${id}/requeue`),
+    onSuccess: async () => {
+      notify('Back in the queue.', 'success');
+      await queryClient.invalidateQueries({ queryKey: ['document', id] });
+      await queryClient.invalidateQueries({ queryKey: ['documents'] });
+    },
+    onError: (error) => {
+      notify(
+        error instanceof ApiError
+          ? (error.problem.detail ?? error.problem.title)
+          : 'Could not requeue this document.',
+        'error',
+      );
     },
   });
 
@@ -124,7 +151,7 @@ export default function ReviewPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <Link href="/documents" className="text-sm text-slate-500 hover:underline">
+          <Link href="/documents" className="text-sm text-ink-muted hover:underline">
             ← Documents
           </Link>
           <h1 className="mt-1 truncate text-xl font-semibold tracking-tight">
@@ -139,10 +166,24 @@ export default function ReviewPage() {
       </div>
 
       {document_.status === 'FAILED' && (
-        <ErrorState
-          title="Extraction failed"
-          message={document_.failureReason ?? 'No reason was recorded.'}
-        />
+        <div className="space-y-3">
+          <ErrorState
+            title="Extraction failed"
+            message={document_.failureReason ?? 'No reason was recorded.'}
+          />
+          {/* A failure screen with no way forward is a dead end. Most failures
+              here are transient — an expired key, a provider outage — and
+              re-uploading is not a workaround, because the server correctly
+              rejects the identical bytes as a duplicate. */}
+          <button
+            type="button"
+            onClick={() => requeue.mutate()}
+            disabled={requeue.isPending}
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm font-medium text-ink transition hover:bg-surface-muted disabled:opacity-60"
+          >
+            {requeue.isPending ? 'Requeueing…' : 'Try this document again'}
+          </button>
+        </div>
       )}
 
       {extraction && <FindingsBanner findings={extraction.findings} />}
@@ -155,21 +196,33 @@ export default function ReviewPage() {
         />
       )}
       {submitError?.problem.errors && submitError.problem.errors.length > 0 && (
-        <ul className="space-y-1 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+        <ul className="space-y-1 rounded-lg border border-critical-line bg-critical-soft p-4 text-sm text-critical-ink">
           {submitError.problem.errors.map((issue, i) => (
             <li key={i}>{issue.message}</li>
           ))}
         </ul>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* PDF pane */}
-        <div className="rounded-xl border border-slate-200 bg-white p-1">
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        {/*
+          PDF pane, pinned on desktop.
+
+          Reviewing means checking a field against the document, and the fields
+          column is far taller than the PDF. Without `sticky`, scrolling to the
+          totals scrolls the evidence off-screen — so the reviewer is comparing
+          a number against their memory of a page they can no longer see, which
+          is exactly the comparison this screen exists to avoid.
+
+          On mobile the two stack and the viewer is shorter: 70vh of PDF above
+          the fields means scrolling past a full screen of document before
+          reaching the first thing that can be edited.
+        */}
+        <div className="rounded-xl border border-line bg-surface p-1 lg:sticky lg:top-20">
           {file.data ? (
             <object
               data={file.data.url}
               type="application/pdf"
-              className="h-[70vh] w-full rounded-lg"
+              className="h-[45vh] w-full rounded-lg lg:h-[calc(100vh-8rem)]"
               aria-label="Invoice PDF"
             >
               {/* Browsers without an inline PDF viewer must still offer the file. */}
@@ -178,14 +231,14 @@ export default function ReviewPage() {
                   href={file.data.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-sm font-medium text-slate-900 underline"
+                  className="text-sm font-medium text-ink underline"
                 >
                   Open the PDF
                 </a>
               </div>
             </object>
           ) : (
-            <div className="flex h-[70vh] items-center justify-center text-sm text-slate-400">
+            <div className="flex h-[45vh] items-center justify-center text-sm text-ink-subtle lg:h-[calc(100vh-8rem)]">
               {file.isError ? 'Could not load the PDF' : 'Loading PDF…'}
             </div>
           )}
@@ -194,7 +247,7 @@ export default function ReviewPage() {
         {/* Fields pane */}
         <div className="space-y-4">
           {!data && (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-500">
+            <div className="rounded-xl border border-line bg-surface p-6 text-sm text-ink-muted">
               {isInFlight(document_.status)
                 ? 'Extraction is still running…'
                 : 'No extraction is available for this document.'}
@@ -260,7 +313,7 @@ export default function ReviewPage() {
               </Section>
 
               <Section title={`Line items (${data.lineItems.length})`}>
-                <div className="divide-y divide-slate-100">
+                <div className="divide-y divide-line">
                   {data.lineItems.map((item, index) => (
                     <div key={index} className="py-2">
                       <EditableField
@@ -271,7 +324,7 @@ export default function ReviewPage() {
                         onChange={setField}
                         editable={canReview}
                       />
-                      <div className="flex items-baseline justify-between gap-4 pl-4 text-xs text-slate-400">
+                      <div className="flex items-baseline justify-between gap-4 pl-4 text-xs text-ink-subtle">
                         <span>
                           {item.quantity} × {formatMoney(item.unitPriceCents, data.currency)}
                           {' · VAT '}
@@ -314,7 +367,7 @@ export default function ReviewPage() {
                   onChange={setField}
                   editable={canReview}
                 />
-                <div className="border-t border-slate-200 pt-1">
+                <div className="border-t border-line pt-1">
                   <EditableField
                     label="Total"
                     path="totalCents"
@@ -329,13 +382,23 @@ export default function ReviewPage() {
               </Section>
 
               {canReview && (
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+                /*
+                 * Pinned to the bottom of the viewport.
+                 *
+                 * A long invoice pushes the approve button below the fold, and
+                 * the reviewer's last action before deciding is to scroll to
+                 * the totals — so the control they need is furthest away
+                 * exactly when they want it. Keeping it in view also keeps the
+                 * pending-correction count visible while editing, which is the
+                 * only running indication that an edit registered at all.
+                 */
+                <div className="sticky bottom-4 z-10 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface/95 p-4 shadow-lg backdrop-blur">
                   <button
                     type="button"
                     onClick={approve}
                     disabled={submit.isPending}
                     data-testid="approve-button"
-                    className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:opacity-60"
+                    className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-accent-ink transition hover:bg-accent-hover disabled:opacity-60"
                   >
                     {submit.isPending
                       ? 'Saving…'
@@ -348,49 +411,52 @@ export default function ReviewPage() {
                     <button
                       type="button"
                       onClick={() => setEdits({})}
-                      className="text-sm text-slate-500 hover:text-slate-900"
+                      className="text-sm text-ink-muted transition hover:text-ink"
                     >
                       Discard changes
                     </button>
                   )}
 
-                  <span className="ml-auto hidden text-xs text-slate-400 sm:inline">
-                    Press <kbd className="rounded border px-1">A</kbd> to approve
+                  {/* Shortcuts are worthless if nobody knows they exist, and a
+                      reviewer processing a queue is precisely who benefits. */}
+                  <span className="ml-auto hidden items-center gap-2 text-xs text-ink-subtle sm:flex">
+                    <Shortcut keyLabel="A" description="approve" />
+                    <Shortcut keyLabel="E" description="first flagged field" />
                   </span>
                 </div>
               )}
 
-              <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-500">
-                <p className="mb-2 font-medium text-slate-700">Extraction</p>
+              <div className="rounded-xl border border-line bg-surface p-4 text-xs text-ink-muted">
+                <p className="mb-2 font-medium text-ink">Extraction</p>
                 <dl className="grid grid-cols-2 gap-y-1">
                   <dt>Model</dt>
-                  <dd className="text-right text-slate-700">{extraction.model}</dd>
+                  <dd className="text-right text-ink">{extraction.model}</dd>
                   <dt>Prompt</dt>
-                  <dd className="text-right text-slate-700">{extraction.promptVersion}</dd>
+                  <dd className="text-right text-ink">{extraction.promptVersion}</dd>
                   <dt>Attempts</dt>
-                  <dd className="text-right text-slate-700">{extraction.attempts}</dd>
+                  <dd className="text-right text-ink">{extraction.attempts}</dd>
                   <dt>Version</dt>
-                  <dd className="text-right text-slate-700">v{extraction.version}</dd>
+                  <dd className="text-right text-ink">v{extraction.version}</dd>
                   <dt>Cost</dt>
-                  <dd className="text-right text-slate-700">{formatCost(extraction.costUsd)}</dd>
+                  <dd className="text-right text-ink">{formatCost(extraction.costUsd)}</dd>
                   <dt>Extracted</dt>
-                  <dd className="text-right text-slate-700">{formatDate(extraction.createdAt)}</dd>
+                  <dd className="text-right text-ink">{formatDate(extraction.createdAt)}</dd>
                 </dl>
               </div>
             </>
           )}
 
-          <details className="rounded-xl border border-slate-200 bg-white p-4">
-            <summary className="cursor-pointer text-sm font-medium text-slate-700">
+          <details className="rounded-xl border border-line bg-surface p-4">
+            <summary className="cursor-pointer text-sm font-medium text-ink">
               Timeline ({document_.events.length})
             </summary>
             <ol className="mt-3 space-y-2">
               {document_.events.map((event) => (
                 <li key={event.id} className="flex gap-3 text-xs">
-                  <span className="shrink-0 tabular-nums text-slate-400">
+                  <span className="shrink-0 tabular-nums text-ink-subtle">
                     {formatDateTime(event.createdAt)}
                   </span>
-                  <span className="text-slate-700">
+                  <span className="text-ink">
                     {event.type}
                     {typeof event.payload['to'] === 'string' && ` → ${event.payload['to']}`}
                   </span>
@@ -406,9 +472,20 @@ export default function ReviewPage() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-4">
-      <h2 className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">{title}</h2>
+    <section className="rounded-xl border border-line bg-surface p-4">
+      <h2 className="mb-1 text-xs font-medium uppercase tracking-wide text-ink-muted">{title}</h2>
       {children}
     </section>
+  );
+}
+
+function Shortcut({ keyLabel, description }: { keyLabel: string; description: string }) {
+  return (
+    <span className="inline-flex items-center gap-1">
+      <kbd className="rounded border border-line bg-surface-muted px-1.5 py-0.5 font-sans text-[0.7rem] text-ink-muted">
+        {keyLabel}
+      </kbd>
+      {description}
+    </span>
   );
 }

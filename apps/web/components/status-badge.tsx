@@ -8,16 +8,21 @@ import type { DocumentStatus } from '@invoiceiq/contracts';
  * green means done, red means failed, and everything still in flight is blue —
  * a reviewer scanning the list should be able to find the rows needing them
  * without reading a single word.
+ *
+ * The tones are semantic tokens rather than palette values, so the badge is
+ * legible in both themes without a second set of classes. A raw amber tuned to
+ * sit gently on white glows on near-black, and a column of "needs review"
+ * badges at that intensity is the only thing anyone can look at.
  */
 const STYLES: Record<DocumentStatus, string> = {
-  UPLOADED: 'bg-slate-100 text-slate-700 ring-slate-200',
-  QUEUED: 'bg-sky-50 text-sky-700 ring-sky-200',
-  PROCESSING: 'bg-sky-50 text-sky-700 ring-sky-200',
-  EXTRACTED: 'bg-sky-50 text-sky-700 ring-sky-200',
-  VALIDATING: 'bg-sky-50 text-sky-700 ring-sky-200',
-  NEEDS_REVIEW: 'bg-amber-50 text-amber-800 ring-amber-300',
-  COMPLETED: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-  FAILED: 'bg-rose-50 text-rose-700 ring-rose-200',
+  UPLOADED: 'bg-surface-muted text-ink-muted ring-line',
+  QUEUED: 'bg-info-soft text-info-ink ring-info-line',
+  PROCESSING: 'bg-info-soft text-info-ink ring-info-line',
+  EXTRACTED: 'bg-info-soft text-info-ink ring-info-line',
+  VALIDATING: 'bg-info-soft text-info-ink ring-info-line',
+  NEEDS_REVIEW: 'bg-caution-soft text-caution-ink ring-caution-line',
+  COMPLETED: 'bg-positive-soft text-positive-ink ring-positive-line',
+  FAILED: 'bg-critical-soft text-critical-ink ring-critical-line',
 };
 
 const LABELS: Record<DocumentStatus, string> = {
@@ -31,7 +36,7 @@ const LABELS: Record<DocumentStatus, string> = {
   FAILED: 'Failed',
 };
 
-/** Statuses where the pipeline is still working, so the UI should keep polling. */
+/** Statuses where the pipeline is still working, so the UI should keep watching. */
 const IN_FLIGHT = new Set<DocumentStatus>([
   'UPLOADED',
   'QUEUED',
@@ -48,6 +53,10 @@ export function StatusBadge({ status }: { status: DocumentStatus }) {
       data-testid={`status-${status}`}
       className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${STYLES[status]}`}
     >
+      {/*
+        The dot is decorative — the label already says "Processing", so
+        announcing a bullet adds nothing but noise for a screen-reader user.
+      */}
       {IN_FLIGHT.has(status) && (
         <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current" />
       )}

@@ -1,0 +1,102 @@
+# Prometheus alerting rules.
+#
+# Three alerts, deliberately. An alert that fires without a corresponding action
+# is training to ignore alerts, so each of these names a specific thing that is
+# wrong, a specific person-facing consequence, and a runbook entry. Everything
+# else worth knowing lives on the dashboard, where it can be looked at rather
+# than pushed at someone asleep.
+#
+# Load with:  rule_files: [ /etc/prometheus/alerts.yml ]
+
+groups:
+  - name: invoiceiq
+    interval: 30s
+    rules:
+      # ---------------------------------------------------------------------
+      # 1. Work is arriving and not being done.
+      #
+      # Depth alone is not a fault -- a burst upload legitimately queues fifty
+      # documents and the rate limiter deliberately drains them slowly. What is
+      # a fault is depth that stays high while *nothing completes*, which is
+      # what the second condition adds: a wedged worker, a poison job, or a
+      # provider outage.
+      # ---------------------------------------------------------------------
+      - alert: ExtractionQueueStalled
+        expr: |
+          invoiceiq_queue_depth{queue="extraction",state="waiting"} > 20
+          and
+          rate(invoiceiq_extraction_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          summary: 'Extraction queue is {{ $value }} deep with nothing completing'
+          description: >-
+            Jobs are waiting and none have finished in ten minutes. Check the
+            worker is running and consuming, then check LLM_PROVIDER and the
+            API key. See the "extraction is failing across the board" runbook
+            entry.
+
+      # ---------------------------------------------------------------------
+      # 2. Documents are failing, not merely needing review.
+      #
+      # NEEDS_REVIEW is a *success*: the system correctly decided a human
+      # should look. Alerting on it would page someone every time the
+      # confidence policy did its job. FAILED means no extraction exists at
+      # all, and above a fifth of throughput that is systemic rather than a
+      # run of bad scans.
+      # ---------------------------------------------------------------------
+      - alert: ExtractionFailureRateHigh
+        expr: |
+          sum(rate(invoiceiq_extraction_total{outcome="failed"}[15m]))
+          /
+          clamp_min(sum(rate(invoiceiq_extraction_total[15m])), 0.001)
+          > 0.2
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          summary: '{{ $value | humanizePercentage }} of extractions are failing'
+          description: >-
+            Group documents.failure_reason by its code prefix to separate
+            LIKELY_SCANNED_IMAGE (users uploading scans -- not our outage) from
+            SCHEMA_FAILURE and LLM_REQUEST_REJECTED (ours).
+
+      # ---------------------------------------------------------------------
+      # 3. The spend cap is refusing work.
+      #
+      # By the time this fires the budget is already spent and documents are
+      # being failed. It is therefore a page, not a warning: every minute it
+      # continues is another user's upload rejected, and the fix (raise the cap,
+      # requeue) needs a human decision about money.
+      #
+      # `increase(...) > 0` rather than a rate threshold: one refusal is the
+      # event. There is no acceptable background level of hitting the ceiling.
+      # ---------------------------------------------------------------------
+      - alert: SpendCapReached
+        expr: increase(invoiceiq_spend_cap_refusal_total[15m]) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: 'Daily LLM spend cap reached -- extractions are being refused'
+          description: >-
+            Raise LLM_DAILY_SPEND_CAP_USD if the spend is legitimate, then
+            requeue the affected documents. If it is not legitimate, look for a
+            retry loop before raising anything -- the cap is doing its job.
+
+      # ---------------------------------------------------------------------
+      # Not a page: the janitor found something. Worth knowing, not worth
+      # waking anyone -- the janitor has already fixed it by the time this is
+      # visible. It matters as a trend, because a worker that strands documents
+      # every day has a crash nobody has looked at.
+      # ---------------------------------------------------------------------
+      - alert: DocumentsStranded
+        expr: invoiceiq_stranded_documents > 0
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: '{{ $value }} document(s) stranded past the janitor threshold'
+          description: >-
+            The janitor reclaims these automatically. Persistent occurrences
+            mean workers are dying mid-job -- check for OOM kills.

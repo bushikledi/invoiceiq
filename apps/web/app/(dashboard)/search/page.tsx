@@ -45,7 +45,7 @@ export default function SearchPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Search</h1>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-ink-muted">
           Semantic search across every extracted invoice — meaning, not keywords.
         </p>
       </div>
@@ -58,17 +58,17 @@ export default function SearchPage() {
           placeholder="Search by vendor, place, or what was bought"
           aria-label="Search invoices"
           data-testid="search-input"
-          className="w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-slate-900 focus:ring-1 focus:ring-slate-900"
+          className="w-full rounded-lg border border-line-strong px-4 py-2.5 text-sm"
         />
 
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
           <span>Try:</span>
           {EXAMPLES.map((example) => (
             <button
               key={example}
               type="button"
               onClick={() => setInput(example)}
-              className="rounded-full bg-slate-100 px-2.5 py-1 hover:bg-slate-200"
+              className="rounded-full bg-surface-muted px-2.5 py-1 hover:bg-line"
             >
               {example}
             </button>
@@ -98,7 +98,7 @@ export default function SearchPage() {
 
       {search.isSuccess && (
         <>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-ink-subtle">
             {search.data.hits.length} result{search.data.hits.length === 1 ? '' : 's'} in{' '}
             {search.data.tookMs}ms
           </p>
@@ -114,25 +114,25 @@ export default function SearchPage() {
                 <li key={hit.documentId} data-testid="search-hit">
                   <Link
                     href={`/documents/${hit.documentId}`}
-                    className="block rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300"
+                    className="block rounded-xl border border-line bg-surface p-4 transition hover:border-line-strong"
                   >
                     <div className="flex flex-wrap items-center gap-3">
-                      <span className="font-medium text-slate-900">
+                      <span className="font-medium text-ink">
                         {hit.invoiceNumber ?? hit.originalName}
                       </span>
                       {hit.vendorName && (
-                        <span className="text-sm text-slate-500">{hit.vendorName}</span>
+                        <span className="text-sm text-ink-muted">{hit.vendorName}</span>
                       )}
                       <StatusBadge status={hit.status} />
 
                       <span className="ml-auto flex items-center gap-3">
                         {hit.totalCents !== null && hit.currency && (
-                          <span className="text-sm font-medium tabular-nums text-slate-900">
+                          <span className="text-sm font-medium tabular-nums text-ink">
                             {formatMoney(hit.totalCents, hit.currency)}
                           </span>
                         )}
                         <span
-                          className="rounded-full bg-slate-100 px-2 py-0.5 text-xs tabular-nums text-slate-500"
+                          className="rounded-full bg-surface-muted px-2 py-0.5 text-xs tabular-nums text-ink-muted"
                           title="Similarity"
                         >
                           {formatPercent(hit.score)}
@@ -140,11 +140,11 @@ export default function SearchPage() {
                       </span>
                     </div>
 
-                    <p className="mt-2 line-clamp-2 text-sm text-slate-600">{hit.snippet}</p>
+                    <p className="mt-2 line-clamp-2 text-sm text-ink-muted">{hit.snippet}</p>
 
                     {/* Saying which chunk matched explains why an apparently
                         unrelated document surfaced. */}
-                    <p className="mt-1 text-xs text-slate-400">
+                    <p className="mt-1 text-xs text-ink-subtle">
                       matched the {hit.kind === 'synthetic' ? 'invoice summary' : 'document text'}
                     </p>
                   </Link>

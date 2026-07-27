@@ -155,11 +155,17 @@ export class AllExceptionsFilter implements ExceptionFilter {
     const type = statusToProblemType(status);
 
     const detail =
-      typeof payload === 'string'
+      // Some framework exceptions carry a message written for a stack trace,
+      // not for a person: the throttler's reads "ThrottlerException: Too Many
+      // Requests", which the UI then renders verbatim to someone who has no
+      // idea what a ThrottlerException is and is given nothing to do about it.
+      // Where we have a better sentence, use ours.
+      FRAMEWORK_DETAIL_OVERRIDES.get(type) ??
+      (typeof payload === 'string'
         ? payload
         : typeof payload === 'object' && payload !== null && 'message' in payload
           ? stringifyMessage(payload.message)
-          : exception.message;
+          : exception.message);
 
     // Nest's built-in pipes (ParseUUIDPipe and friends) raise 400, while our
     // Zod pipe produces 422. Both are validation failures and clients branch on
@@ -197,6 +203,19 @@ function asHealthCheckPayload(payload: unknown): HealthCheckPayload | undefined 
  * returns `number`, and any framework can throw a status that is not an
  * HttpStatus member, so comparing the two as enums is the wrong model.
  */
+/**
+ * Replacements for framework messages that are not addressed to a user.
+ *
+ * Deliberately narrow. The default remains "show what the thrower said",
+ * because our own errors are written for the person reading them and
+ * paraphrasing those would lose the specifics that make them useful — "Line
+ * items sum to €1,240.00 but the subtotal says €1,250.00" is the whole value.
+ * Only messages that name an internal class get replaced.
+ */
+const FRAMEWORK_DETAIL_OVERRIDES = new Map<ProblemType, string>([
+  ['rate_limited', 'Too many requests. Wait a moment and try again.'],
+]);
+
 const STATUS_TO_PROBLEM = new Map<number, ProblemType>([
   [HttpStatus.BAD_REQUEST, 'validation_error'],
   [HttpStatus.UNPROCESSABLE_ENTITY, 'validation_error'],

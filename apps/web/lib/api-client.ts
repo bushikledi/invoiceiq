@@ -126,6 +126,92 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   return (await response.json()) as T;
 }
 
+/**
+ * Reads a server-sent-event stream, with one refresh-and-retry on a 401.
+ *
+ * `fetch` rather than `EventSource` because `EventSource` cannot set headers,
+ * which would force the access token into the query string and from there into
+ * every access log between here and the server. The price is parsing the wire
+ * format ourselves — which is genuinely small, and shown below.
+ *
+ * @param onEvent  called with the parsed JSON of each `data:` payload
+ * @param onOpen   called once the response headers arrive, so a caller can
+ *                 distinguish "connected" from "still dialling"
+ */
+export async function streamRequest(
+  path: string,
+  signal: AbortSignal,
+  onEvent: (data: unknown) => void,
+  onOpen?: () => void,
+): Promise<void> {
+  const open = async (): Promise<Response> =>
+    fetch(`${BASE}${path}`, {
+      headers: {
+        Accept: 'text/event-stream',
+        ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      },
+      credentials: 'include',
+      signal,
+    });
+
+  let response = await open();
+
+  // A long-lived stream outlives its access token by design, so the 401 arrives
+  // on *reconnect* rather than mid-stream. Reusing the shared refresh keeps
+  // this from racing the queries that are refreshing at the same moment — with
+  // rotation, two refreshes means one of them replays a spent token and the
+  // reuse detector revokes the whole family.
+  if (response.status === 401) {
+    const refreshed = await refreshSession();
+    if (!refreshed) {
+      accessToken = null;
+      onUnauthorized?.();
+      throw new ApiError(await toProblem(response), 401);
+    }
+    response = await open();
+  }
+
+  if (!response.ok || !response.body) {
+    throw new ApiError(await toProblem(response), response.status);
+  }
+
+  onOpen?.();
+
+  const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return;
+
+      buffer += value;
+
+      // Events are separated by a blank line. A chunk boundary can land
+      // anywhere, so the trailing partial event stays in the buffer until the
+      // separator that completes it arrives — splitting per chunk instead would
+      // silently truncate any event unlucky enough to straddle a packet.
+      let separator = buffer.indexOf('\n\n');
+      while (separator !== -1) {
+        const frame = buffer.slice(0, separator);
+        buffer = buffer.slice(separator + 2);
+        separator = buffer.indexOf('\n\n');
+
+        for (const line of frame.split('\n')) {
+          if (!line.startsWith('data:')) continue;
+          try {
+            onEvent(JSON.parse(line.slice(5).trim()));
+          } catch {
+            /* A frame we cannot parse is dropped, not fatal to the stream. */
+          }
+        }
+      }
+    }
+  } finally {
+    reader.cancel().catch(() => undefined);
+  }
+}
+
 async function toProblem(response: Response): Promise<ProblemDetails> {
   try {
     return (await response.json()) as ProblemDetails;

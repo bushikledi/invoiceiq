@@ -125,17 +125,18 @@ export function UploadDropzone() {
         }}
         role="button"
         tabIndex={0}
+        aria-label="Upload invoice PDFs"
         data-testid="dropzone"
         className={`cursor-pointer rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
           dragging
-            ? 'border-slate-900 bg-slate-50'
-            : 'border-slate-300 bg-white hover:border-slate-400'
+            ? 'border-focus bg-info-soft'
+            : 'border-line-strong bg-surface hover:border-focus'
         }`}
       >
-        <p className="text-sm font-medium text-slate-900">
+        <p className="text-sm font-medium text-ink">
           Drop invoice PDFs here, or click to choose
         </p>
-        <p className="mt-1 text-xs text-slate-500">PDF only · up to 10 MB</p>
+        <p className="mt-1 text-xs text-ink-muted">PDF only · up to 10 MB</p>
 
         <input
           ref={inputRef}
@@ -155,22 +156,29 @@ export function UploadDropzone() {
       {Object.entries(uploads).map(([id, state]) => (
         <div
           key={id}
-          className="rounded-lg border border-slate-200 bg-white px-4 py-3"
+          className="rounded-xl border border-line bg-surface px-4 py-3"
           data-testid="upload-progress"
         >
           <div className="flex items-center justify-between gap-4">
-            <span className="truncate text-sm text-slate-700">{state.filename}</span>
-            <span className="shrink-0 text-xs text-slate-500">
+            <span className="truncate text-sm text-ink">{state.filename}</span>
+            <span className="shrink-0 text-xs tabular-nums text-ink-muted">
               {state.error ? 'Failed' : `${state.progress}%`}
             </span>
           </div>
 
           {state.error ? (
-            <p className="mt-1 text-xs text-rose-600">{state.error}</p>
+            <p className="mt-1 text-xs text-critical-ink">{state.error}</p>
           ) : (
-            <div className="mt-2 h-1 overflow-hidden rounded-full bg-slate-100">
+            <div
+              className="mt-2 h-1 overflow-hidden rounded-full bg-surface-muted"
+              role="progressbar"
+              aria-label={`Uploading ${state.filename}`}
+              aria-valuenow={state.progress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
               <div
-                className="h-full rounded-full bg-slate-900 transition-all"
+                className="h-full rounded-full bg-accent transition-all"
                 style={{ width: `${state.progress}%` }}
               />
             </div>

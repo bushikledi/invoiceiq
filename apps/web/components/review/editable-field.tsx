@@ -90,13 +90,19 @@ export function EditableField({
     onChange(path, draft);
   }
 
+  const fieldId = `field-${path}`;
+  const reasonId = `reason-${path}`;
+
   return (
     <div className="flex items-baseline justify-between gap-4 py-2">
-      <span className="shrink-0 text-sm text-slate-500">{label}</span>
+      <label htmlFor={fieldId} className="shrink-0 text-sm text-ink-muted">
+        {label}
+      </label>
 
       {editing ? (
         <input
           ref={inputRef}
+          id={fieldId}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
@@ -107,32 +113,50 @@ export function EditableField({
             if (e.key === 'Escape') setEditing(false);
           }}
           data-testid={`edit-${path}`}
-          className="w-40 rounded border border-slate-900 px-2 py-1 text-right text-sm outline-none"
+          // `inputMode` rather than `type="number"`: a numeric keypad on mobile
+          // without the spinner arrows, the scroll-wheel-changes-the-value
+          // behaviour, or the browser silently rejecting a comma decimal that
+          // `commit` handles perfectly well.
+          inputMode={kind === 'money' || kind === 'number' ? 'decimal' : 'text'}
+          className="w-40 rounded-md border border-line-strong bg-surface px-2 py-1 text-right text-sm text-ink"
         />
       ) : (
         <button
           type="button"
+          id={fieldId}
           onClick={beginEdit}
           disabled={!editable}
           data-testid={`field-${path}`}
           // The `E` shortcut jumps to the first flagged field via this attribute.
           data-flagged={flagged ? 'true' : undefined}
+          // `aria-describedby` rather than `title` alone. A title tooltip is
+          // invisible on touch, unreachable by keyboard, and inconsistently
+          // announced — so the reason a value is doubted, which is the single
+          // most useful thing on this screen, reached only mouse users.
+          {...(flagged && meta?.reason ? { 'aria-describedby': reasonId } : {})}
           title={meta?.reason ?? undefined}
-          className={`rounded px-2 py-1 text-right text-sm transition ${
-            editable ? 'hover:bg-slate-100' : 'cursor-default'
+          className={`rounded-md px-2 py-1 text-right text-sm transition ${
+            editable ? 'hover:bg-surface-muted' : 'cursor-default'
           } ${
             flagged
-              ? 'bg-amber-50 font-medium text-amber-900 ring-1 ring-amber-300'
-              : 'text-slate-900'
+              ? 'bg-caution-soft font-medium text-caution-ink ring-1 ring-caution-line'
+              : 'text-ink'
           }`}
         >
           {display}
           {flagged && (
-            <span className="ml-1.5 text-xs text-amber-600" aria-label="Needs checking">
+            <span aria-hidden className="ml-1.5 text-xs text-caution">
               ⚑
             </span>
           )}
+          {flagged && <span className="sr-only"> — needs checking</span>}
         </button>
+      )}
+
+      {flagged && meta?.reason && (
+        <span id={reasonId} className="sr-only">
+          {meta.reason}
+        </span>
       )}
     </div>
   );

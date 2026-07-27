@@ -1,35 +1,250 @@
 @import 'tailwindcss';
 
 /*
- * Status colours map 1:1 to DocumentStatus in the domain layer. Defining them
- * once as tokens means a badge, a table row and a timeline entry cannot drift
- * to different greens for COMPLETED.
+ * ---------------------------------------------------------------------------
+ * Semantic tokens
+ * ---------------------------------------------------------------------------
+ *
+ * An earlier version of this file committed to light only, with a comment
+ * explaining that a real dark theme meant restyling every component. That was
+ * true, and the reason it was true was the actual problem: components named raw
+ * palette values (`bg-white`, `text-slate-500`), so the theme was spread across
+ * forty files instead of living in one.
+ *
+ * The fix is not `dark:` on every element — that doubles the class list and
+ * still leaves two hard-coded palettes to keep in sync. It is to name colours by
+ * *role* and let the role resolve differently per theme. A card is
+ * `bg-surface`, full stop; whether that is white or near-black is decided here.
+ *
+ * `@theme inline` is what makes this work: it emits utilities that reference
+ * `var(--surface)` at runtime rather than resolving the value at build time, so
+ * one variable swap re-themes everything.
  */
-@theme {
-  --color-status-uploaded: oklch(0.72 0.02 250);
-  --color-status-queued: oklch(0.72 0.02 250);
-  --color-status-processing: oklch(0.68 0.15 250);
-  --color-status-extracted: oklch(0.68 0.15 250);
-  --color-status-validating: oklch(0.68 0.15 250);
-  --color-status-needs-review: oklch(0.75 0.16 75);
-  --color-status-completed: oklch(0.65 0.16 150);
-  --color-status-failed: oklch(0.62 0.2 25);
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-surface-raised: var(--surface-raised);
+
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-subtle: var(--ink-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-ink: var(--accent-ink);
+  --color-focus: var(--focus);
+
+  /* Tone families. Each is a fill, a border and readable text on that fill. */
+  --color-positive: var(--positive);
+  --color-positive-soft: var(--positive-soft);
+  --color-positive-line: var(--positive-line);
+  --color-positive-ink: var(--positive-ink);
+
+  --color-caution: var(--caution);
+  --color-caution-soft: var(--caution-soft);
+  --color-caution-line: var(--caution-line);
+  --color-caution-ink: var(--caution-ink);
+
+  --color-critical: var(--critical);
+  --color-critical-soft: var(--critical-soft);
+  --color-critical-line: var(--critical-line);
+  --color-critical-ink: var(--critical-ink);
+
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-line: var(--info-line);
+  --color-info-ink: var(--info-ink);
 }
 
 /*
- * Light only, deliberately.
- *
- * An earlier version declared `color-scheme: light dark` and a dark body, but
- * every surface in the app — cards, tables, the review panes — is built on
- * light tokens. The result on a dark-mode machine was black behind white
- * cards: not a dark theme, just a broken light one. Committing to one scheme
- * is honest; a real dark theme means restyling every component, which is worth
- * doing deliberately or not at all.
+ * Light is the default and also the fallback: a browser that supports neither
+ * the media query nor the attribute still gets a complete, readable theme
+ * rather than unstyled text.
  */
 :root {
   color-scheme: light;
+
+  --canvas: oklch(0.985 0.002 250);
+  --surface: oklch(1 0 0);
+  --surface-muted: oklch(0.968 0.003 250);
+  --surface-raised: oklch(1 0 0);
+
+  --line: oklch(0.922 0.005 250);
+  --line-strong: oklch(0.86 0.008 250);
+
+  --ink: oklch(0.21 0.015 260);
+  --ink-muted: oklch(0.48 0.012 260);
+  --ink-subtle: oklch(0.63 0.01 260);
+
+  --accent: oklch(0.24 0.02 260);
+  --accent-hover: oklch(0.32 0.022 260);
+  --accent-ink: oklch(0.99 0 0);
+  --focus: oklch(0.58 0.17 255);
+
+  --positive: oklch(0.62 0.15 150);
+  --positive-soft: oklch(0.96 0.03 150);
+  --positive-line: oklch(0.86 0.07 150);
+  --positive-ink: oklch(0.42 0.11 150);
+
+  --caution: oklch(0.72 0.15 75);
+  --caution-soft: oklch(0.97 0.04 85);
+  --caution-line: oklch(0.87 0.09 80);
+  --caution-ink: oklch(0.46 0.1 65);
+
+  --critical: oklch(0.6 0.2 25);
+  --critical-soft: oklch(0.96 0.03 20);
+  --critical-line: oklch(0.86 0.08 20);
+  --critical-ink: oklch(0.45 0.16 25);
+
+  --info: oklch(0.6 0.15 250);
+  --info-soft: oklch(0.96 0.025 250);
+  --info-line: oklch(0.86 0.06 250);
+  --info-ink: oklch(0.45 0.13 255);
+}
+
+/*
+ * Dark, derived rather than inverted.
+ *
+ * Surfaces get *lighter* as they come forward — the opposite of the light
+ * theme, because on a dark canvas a raised element reads as raised by emitting
+ * more light, not less. Inverting the light ramp instead produces cards that
+ * look like holes.
+ *
+ * The tone fills are desaturated and darkened well past their light
+ * counterparts: an amber that reads as a gentle highlight on white glows on
+ * near-black, and a row of "needs review" badges at that intensity is the only
+ * thing anyone can look at.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --canvas: oklch(0.17 0.008 260);
+    --surface: oklch(0.215 0.009 260);
+    --surface-muted: oklch(0.255 0.01 260);
+    --surface-raised: oklch(0.245 0.01 260);
+
+    --line: oklch(0.31 0.012 260);
+    --line-strong: oklch(0.4 0.014 260);
+
+    --ink: oklch(0.96 0.003 260);
+    --ink-muted: oklch(0.75 0.012 260);
+    --ink-subtle: oklch(0.6 0.012 260);
+
+    --accent: oklch(0.93 0.005 260);
+    --accent-hover: oklch(0.85 0.008 260);
+    --accent-ink: oklch(0.19 0.01 260);
+    --focus: oklch(0.7 0.15 255);
+
+    --positive: oklch(0.68 0.15 150);
+    --positive-soft: oklch(0.28 0.05 155);
+    --positive-line: oklch(0.4 0.08 152);
+    --positive-ink: oklch(0.85 0.13 150);
+
+    --caution: oklch(0.78 0.14 78);
+    --caution-soft: oklch(0.3 0.05 70);
+    --caution-line: oklch(0.44 0.08 72);
+    --caution-ink: oklch(0.88 0.12 82);
+
+    --critical: oklch(0.66 0.18 25);
+    --critical-soft: oklch(0.29 0.07 22);
+    --critical-line: oklch(0.42 0.11 23);
+    --critical-ink: oklch(0.85 0.11 25);
+
+    --info: oklch(0.68 0.14 250);
+    --info-soft: oklch(0.28 0.06 255);
+    --info-line: oklch(0.42 0.09 253);
+    --info-ink: oklch(0.85 0.1 250);
+  }
+}
+
+/*
+ * The explicit choice wins over the system preference, in both directions.
+ *
+ * Duplicated rather than shared with the media query above because the two must
+ * be independent: `data-theme="dark"` has to work on a machine set to light,
+ * which a single rule keyed on the media query cannot express.
+ */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --canvas: oklch(0.17 0.008 260);
+  --surface: oklch(0.215 0.009 260);
+  --surface-muted: oklch(0.255 0.01 260);
+  --surface-raised: oklch(0.245 0.01 260);
+
+  --line: oklch(0.31 0.012 260);
+  --line-strong: oklch(0.4 0.014 260);
+
+  --ink: oklch(0.96 0.003 260);
+  --ink-muted: oklch(0.75 0.012 260);
+  --ink-subtle: oklch(0.6 0.012 260);
+
+  --accent: oklch(0.93 0.005 260);
+  --accent-hover: oklch(0.85 0.008 260);
+  --accent-ink: oklch(0.19 0.01 260);
+  --focus: oklch(0.7 0.15 255);
+
+  --positive: oklch(0.68 0.15 150);
+  --positive-soft: oklch(0.28 0.05 155);
+  --positive-line: oklch(0.4 0.08 152);
+  --positive-ink: oklch(0.85 0.13 150);
+
+  --caution: oklch(0.78 0.14 78);
+  --caution-soft: oklch(0.3 0.05 70);
+  --caution-line: oklch(0.44 0.08 72);
+  --caution-ink: oklch(0.88 0.12 82);
+
+  --critical: oklch(0.66 0.18 25);
+  --critical-soft: oklch(0.29 0.07 22);
+  --critical-line: oklch(0.42 0.11 23);
+  --critical-ink: oklch(0.85 0.11 25);
+
+  --info: oklch(0.68 0.14 250);
+  --info-soft: oklch(0.28 0.06 255);
+  --info-line: oklch(0.42 0.09 253);
+  --info-ink: oklch(0.85 0.1 250);
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  background-color: var(--canvas);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * One focus style, applied globally.
+ *
+ * `:focus-visible` rather than `:focus` so a mouse click does not leave a ring
+ * behind, while every keyboard path keeps one. Set here instead of per
+ * component because the failure mode is silent: a button that forgot its focus
+ * class is invisible to keyboard users and looks perfectly fine to everyone
+ * else, so opting *in* per element guarantees some elements are missed.
+ */
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+/*
+ * Respect a reduced-motion preference.
+ *
+ * This app animates status pulses and skeleton loaders on a loop — exactly the
+ * sustained, non-interactive motion that triggers vestibular symptoms. Reduced
+ * motion is a medical setting, not a taste one.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
